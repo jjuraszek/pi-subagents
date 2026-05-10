@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.24.2] - 2026-05-10
+
+### Fixed
+- Show the `Ctrl+O` live-detail affordance for running single async subagent widgets when step details are available, while keeping the generic activity fallback before step status arrives.
+
 ## [0.24.1] - 2026-05-10
 
 ### Changed
