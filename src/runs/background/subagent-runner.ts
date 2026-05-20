@@ -222,7 +222,12 @@ function runPiStreaming(
 			...(piPackageRoot ? { piPackageRoot } : {}),
 			...(piArgv1 ? { argv1: piArgv1 } : {}),
 		});
-		const child = spawn(spawnSpec.command, spawnSpec.args, { cwd, stdio: ["ignore", "pipe", "pipe"], env: spawnEnv });
+		const child = spawn(spawnSpec.command, spawnSpec.args, {
+			cwd,
+			stdio: ["ignore", "pipe", "pipe"],
+			env: spawnEnv,
+			windowsHide: true,
+		});
 		let stderr = "";
 		let stdoutBuf = "";
 		let stderrBuf = "";
