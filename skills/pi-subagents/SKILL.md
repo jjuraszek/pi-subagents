@@ -10,7 +10,7 @@ description: |
 
 # Pi Subagents
 
-This skill is for the main parent orchestrator only. Do not inject or follow it inside spawned child subagents. The parent session owns delegation, orchestration, review fanout, and final fix-worker launches; child subagents should receive concrete role-specific tasks and should not run their own subagent workflows.
+This skill is for the main parent orchestrator only. Do not inject or follow it inside spawned child subagents. The parent session owns delegation, orchestration, review fanout, and final fix-worker launches; child subagents should receive concrete role-specific tasks. Ordinary children should not run their own subagent workflows; the explicit exception is a delegated fanout child whose resolved builtin `tools` includes `subagent`, and that child may use `subagent` only for the fanout work the parent assigned.
 
 Use this skill when the parent orchestrator needs to launch a specialized subagent, compose multiple agents into a workflow, or create/edit agents and chains on demand.
 
@@ -108,7 +108,38 @@ Use this at the start of non-trivial work. Launch `scout` for local context and 
 
 ### Parallel cleanup technique
 
-Use this after implementation when the user wants cleanup review or when a final pass would reduce AI-slop. Launch two fresh-context `reviewer` tasks with `output: false` and `progress: false`: one deslop pass and one verbosity pass. If the `deslop` or `verbosity-cleaner` skills are available, pass the relevant skill to that reviewer; otherwise inline the criteria. Both reviewers are review-only and should flag concrete issues with severity, file/line references, and smallest safe fixes. Review-only/no-edit beats progress-writing or artifact-writing instructions. The parent decides what to apply and asks before making changes unless cleanup was already authorized.
+Use this after implementation when the user wants cleanup review or when a final pass would reduce AI-slop. Launch two fresh-context `reviewer` tasks with `output: false` and `progress: false`: one deslop pass and one verbosity pass. If the `deslop` or `verbosity-cleaner` skills are available, pass the relevant skill to that reviewer; otherwise inline the criteria. Both reviewers are review-only and should flag concrete issues with severity, file/line references, and smallest safe fixes. Phrase the constraint as “Do not modify project/source files; returning findings through the configured output artifact is allowed” when you use `output` or `outputMode: "file-only"`. The parent decides what to apply and asks before making changes unless cleanup was already authorized.
+
+### Staged fix orchestration technique
+
+Use this when a broad diff has known reviewer findings across several items and the user wants the parent to “orchestrate subagents like a boss.” Keep the active worktree safe with a three-stage chain:
+
+1. A parallel read-only planning fanout, one planner/reviewer per issue cluster. Each child inspects the real diff and returns exact files, line refs, proposed fixes, and focused validation. They must not edit.
+2. One writer worker. It receives the planner summaries through `{previous}`, the parent’s accepted scope, stop rules, and verification contract. It is the only child allowed to edit the active worktree.
+3. A parallel read-only validation fanout. Validators inspect the worker diff from fresh context with distinct angles, report pass/fail, remaining blockers, and missing verification.
+
+Prefer `async: true`, `context: "fresh"` for planners/validators, `outputMode: "file-only"` for large summaries, and per-stage output names that will not collide. Use this pattern instead of launching several writer workers into a dirty worktree. Include non-blocking suggestions in the writer prompt only when they are small, safe, and do not expand product scope; otherwise record them as deferred.
+
+Example shape:
+
+```typescript
+subagent({
+  async: true,
+  context: "fresh",
+  chain: [
+    { parallel: [
+      { agent: "reviewer", task: "Plan fixes for deploy docs/workflow. Inspect the current diff. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "plans/deploy.md", outputMode: "file-only" },
+      { agent: "reviewer", task: "Plan fixes for scheduler contract. Inspect the current diff. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "plans/scheduler.md", outputMode: "file-only" },
+      { agent: "reviewer", task: "Plan fixes for sandbox/security. Inspect the current diff. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "plans/sandbox.md", outputMode: "file-only" }
+    ], concurrency: 3 },
+    { agent: "worker", task: "Apply only the accepted fixes from these planning summaries. You are the sole writer for the active worktree. Run focused validation and report changed files, commands, failures, and remaining issues.\n\nPlanning summaries:\n{previous}", output: "worker/fixes.md", outputMode: "file-only", progress: true },
+    { parallel: [
+      { agent: "reviewer", task: "Validate the post-worker diff for deploy and scheduler fixes. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "validation/deploy-scheduler.md", outputMode: "file-only" },
+      { agent: "reviewer", task: "Validate the post-worker diff for sandbox/security fixes. Do not modify project/source files; returning findings via the configured output artifact is allowed.", output: "validation/sandbox.md", outputMode: "file-only" }
+    ], concurrency: 2 }
+  ]
+})
+```
 
 ## Builtin Agents
 
@@ -144,7 +175,7 @@ A strong subagent prompt usually includes:
 - **Goal**: the concrete outcome the child should produce.
 - **Context/evidence**: relevant plan paths, files, diffs, decisions, or user constraints already approved.
 - **Success criteria**: what must be true before the child can finish.
-- **Hard constraints**: true invariants only, such as no edits for review-only tasks, one writer thread, child must not run subagents, or escalation for unapproved decisions.
+- **Hard constraints**: true invariants only, such as no edits for review-only tasks, one writer thread, child must not run subagents unless it is an explicitly assigned `tools: subagent` fanout child, or escalation for unapproved decisions.
 - **Validation**: targeted checks to run, or the next-best check when validation is impossible.
 - **Output**: the expected summary shape, artifact path, or finding format.
 - **Stop rules**: when to ask via `intercom`, when to stop after enough evidence, and when not to keep searching.
@@ -245,7 +276,7 @@ subagent({
 })
 ```
 
-Avoid duplicate output paths in parallel tasks. Concurrent children should not write to the same file. For large saved outputs, set `outputMode: "file-only"` together with an `output` path. The parent result then contains only a compact reference like `Output saved to: /abs/report.md (48.2 KB, 2847 lines). Read this file if needed.` instead of the full saved content. Do not use `output: false` for this; `output: false` means no file output. Failed runs and save errors still return inline details for debugging.
+Avoid duplicate output paths in parallel tasks. Concurrent children should not write to the same file. For large saved outputs, set `outputMode: "file-only"` together with an `output` path. The parent result then contains only a compact reference like `Output saved to: /abs/report.md (48.2 KB, 2847 lines). Read this file if needed.` instead of the full saved content. Do not use `output: false` for this; `output: false` means no file output. When a task is review-only, say “do not modify project/source files” rather than “do not write files” if you also configured `output`; otherwise the child may treat the output artifact as forbidden. Failed runs and save errors still return inline details for debugging.
 
 ### Chain execution
 
@@ -293,13 +324,14 @@ const run = subagent({
 // Continue local inspection, then later call status with the returned id.
 ```
 
-Inspect async runs with `subagent({ action: "status", id: "..." })` or `subagent({ action: "status" })` for active runs.
+Inspect async runs with `subagent({ action: "status", id: "..." })` or `subagent({ action: "status" })` for active runs. If a delegated fanout child launches nested runs, the parent status view shows them as a tree and you can target a nested run directly with its nested id.
 
 Use `resume` for follow-up work after a delegated run:
 
 ```typescript
 subagent({ action: "resume", id: "run-id", message: "Follow up on this point." })
 subagent({ action: "resume", id: "run-id", index: 1, message: "Continue reviewer 2." })
+subagent({ action: "resume", id: "nested-run-id", message: "Continue this nested reviewer." })
 ```
 
 Resume behavior:
@@ -307,6 +339,7 @@ Resume behavior:
 - If an async child has completed, `resume` revives it by starting a new async child from the persisted child session file.
 - Multi-child async runs require `index` unless only one running child is selectable.
 - Completed foreground single, parallel, and chain runs can also be revived by `index` while their run metadata remains in extension state.
+- Nested runs can be resumed by nested id when a live route or persisted nested session metadata is available.
 - Revive starts a new child process from the old session context; it does not restart the same OS process.
 - If the chosen child has no persisted `.jsonl` session file, resume fails and reports that directly.
 
@@ -330,13 +363,14 @@ Use soft interrupt when a child is clearly blocked or drifting and the parent ne
 subagent({ action: "interrupt" })
 ```
 
-Pass `id` when targeting a specific controllable run:
+Pass `id` when targeting a specific controllable run, including a nested run shown in the parent status tree:
 
 ```typescript
 subagent({ action: "interrupt", id: "abc123" })
+subagent({ action: "interrupt", id: "nested-run-id" })
 ```
 
-A soft interrupt cancels the current child turn and leaves the run paused. It does not mean the delegated task succeeded or failed. After an interrupt, decide the next explicit action: resume with clearer instructions, replace the task, ask the user, or stop the workflow.
+A soft interrupt cancels the current child turn and leaves the run paused. It does not mean the delegated task succeeded or failed. Bare `interrupt` does not target hidden nested descendants; use the explicit nested id. After an interrupt, decide the next explicit action: resume with clearer instructions, replace the task, ask the user, or stop the workflow.
 
 Per-run control thresholds can be overridden when a task legitimately runs without observable output for longer than usual:
 
@@ -430,7 +464,7 @@ Use `contact_supervisor` with `reason: "need_decision"` when:
 - a child needs clarification instead of guessing
 - an approval, product, API, or scope choice is required before continuing safely
 
-Do not use `contact_supervisor` just to resolve review-only/no-edit versus progress-writing or artifact-writing instructions. No-edit wins, and the child should return review findings without touching files.
+Do not use `contact_supervisor` just to resolve review-only/no-project-edit versus progress-writing or output-artifact instructions. The child must not modify project/source files, but returning findings through its normal response or configured output artifact is allowed unless the parent explicitly set `output: false`.
 
 Use `contact_supervisor` with `reason: "progress_update"` when:
 - a child is explicitly asked for progress
@@ -440,7 +474,7 @@ Use `contact_supervisor` with `reason: "progress_update"` when:
 Message conventions:
 - `reason: "need_decision"` waits for the parent reply and returns it to the child.
 - `reason: "progress_update"` is non-blocking and should stay concise.
-- Child-side routine completion handoffs are not expected. With the intercom bridge active, parent-side `pi-subagents` sends grouped completion results through `pi-intercom`: one grouped message per foreground parent run and one per completed async result file. Acknowledged foreground delivery returns a compact receipt with artifact/session paths; if unacknowledged, the normal full output is preserved. Grouped messages include child intercom targets and full child summaries.
+- Child-side routine completion handoffs are not expected. With the intercom bridge active, parent-side `pi-subagents` sends grouped completion results through `pi-intercom`: one grouped message per foreground parent run and one per completed async result file. Acknowledged foreground delivery returns a compact receipt with artifact/session paths; if unacknowledged, the normal full output is preserved. Grouped messages include child intercom targets, full child summaries, and compact nested summaries under the parent child that launched them.
 
 If bridge instructions provide the child-facing tool, a child can ask:
 
@@ -656,9 +690,11 @@ The first `worker` implements the approved plan. The parent continues with indep
 
 For complex work, risky changes, broad refactors, or many changed lines, increase review and validation fanout rather than trusting one reviewer. Use distinct angles such as correctness/regressions, tests/validation, simplicity/maintainability, security/privacy, performance, docs/API contracts, and user-flow behavior. When reviewers find non-trivial issues or the fix worker touches many lines, run another focused review round before final validation.
 
+When review has already produced concrete findings across several independent areas, use staged fix orchestration: parallel read-only planners for each issue cluster, one sole writer worker for the active worktree, then parallel fresh-context validators. This is the safest way to handle a dirty worktree with many prior changes because it parallelizes judgment without parallelizing writes. Non-blocking suggestions may go into the writer prompt only if they are small, safe, and inside the approved scope; otherwise defer them explicitly.
+
 For very large work, split into serial milestones instead of launching a swarm of writers. Each milestone gets one writer, a validation contract, fresh-context review/validation, a fix pass, and parent acceptance before the next milestone starts. Use parallel subagents inside a milestone for read-only context, research, review, and validation only.
 
-Keep orchestration authority in the parent session. Child subagents should not launch more subagents, read this skill, or run their own orchestration loops. Spawned subagents do not receive the `pi-subagents` skill, parent-only status/control/slash messages, prior parent `subagent` tool-call/tool-result artifacts, or the `subagent` extension tool. Child context filtering also strips old hidden orchestration-instruction messages when they appear in inherited history. Every child also receives a boundary instruction that says the parent owns orchestration, the child must not propose or run subagents, and implementation children must call real edit/write tools instead of printing pseudo tool calls. Pass children concrete role-specific work instead.
+Keep orchestration authority in the parent session. Child subagents should not launch more subagents, read this skill, or run their own orchestration loops unless the parent intentionally selected a fanout agent whose builtin `tools` includes `subagent`. Spawned subagents do not receive the `pi-subagents` skill, parent-only status/control/slash messages, or prior parent `subagent` tool-call/tool-result artifacts. Ordinary children also do not receive the `subagent` extension tool. Child context filtering strips old hidden orchestration-instruction messages when they appear in inherited history. Every child receives a boundary instruction: ordinary children are told the parent owns orchestration and they must not propose or run subagents; explicit fanout children are told to use `subagent` only for the assigned fanout work, with `maxSubagentDepth` still enforced. Implementation children must call real edit/write tools instead of printing pseudo tool calls. Pass children concrete role-specific work instead.
 
 1. Clarify first. This is mandatory. Gather code context with `scout` or `context-builder`, add `researcher` only when external evidence matters, then ask the user clarifying questions with `interview` until scope, acceptance criteria, constraints, and non-goals are clear.
 2. Define the validation contract. State what done means before implementation: expected behavior, checks to run, user flows to exercise, and evidence required in the worker handoff. For UI, CLI, integration, or workflow changes, include at least one validator angle that uses the product the way a user would rather than only reading code.

@@ -3,8 +3,10 @@
 ## [Unreleased]
 
 ### Added
+- Allow child agents whose resolved builtin tools explicitly include `subagent` to run child-safe nested fanout, with parent-visible nested status trees and nested `status`/`interrupt`/`resume` by id.
 
 ### Fixed
+- Preserve compact nested child summaries in grouped result/intercom payloads and async completion metadata before ordinary result files are processed and deleted.
 
 ## [0.24.4] - 2026-05-20
 
