@@ -24,6 +24,7 @@ import {
 	type ArtifactConfig,
 	type Details,
 	type MaxOutputConfig,
+	type NestedRouteInfo,
 	type ResolvedControlConfig,
 	type SubagentRunMode,
 	ASYNC_DIR,
@@ -33,6 +34,7 @@ import {
 	getAsyncConfigPath,
 	resolveChildMaxSubagentDepth,
 } from "../../shared/types.ts";
+import { nestedResultsPath, resolveInheritedNestedRouteFromEnv, resolveNestedParentAddressFromEnv, writeNestedEvent } from "../shared/nested-events.ts";
 
 const require = createRequire(import.meta.url);
 const piPackageRoot = resolvePiPackageRoot();
@@ -111,6 +113,7 @@ interface AsyncChainParams {
 	controlConfig?: ResolvedControlConfig;
 	controlIntercomTarget?: string;
 	childIntercomTarget?: (agent: string, index: number) => string | undefined;
+	nestedRoute?: NestedRouteInfo;
 }
 
 interface AsyncSingleParams {
@@ -136,6 +139,7 @@ interface AsyncSingleParams {
 	controlConfig?: ResolvedControlConfig;
 	controlIntercomTarget?: string;
 	childIntercomTarget?: (agent: string, index: number) => string | undefined;
+	nestedRoute?: NestedRouteInfo;
 }
 
 interface AsyncExecutionResult {
@@ -236,6 +240,7 @@ export function executeAsyncChain(
 		controlConfig,
 		controlIntercomTarget,
 		childIntercomTarget,
+		nestedRoute,
 	} = params;
 	const resultMode = params.resultMode ?? "chain";
 	const chainSkills = params.chainSkills ?? [];
@@ -261,7 +266,11 @@ export function executeAsyncChain(
 		}
 	}
 
-	const asyncDir = path.join(ASYNC_DIR, id);
+	const inheritedNestedRoute = resolveInheritedNestedRouteFromEnv();
+	const nestedAddress = inheritedNestedRoute ? resolveNestedParentAddressFromEnv() : undefined;
+	const asyncDir = inheritedNestedRoute
+		? path.join(TEMP_ROOT_DIR, "nested-subagent-runs", inheritedNestedRoute.rootRunId, id)
+		: path.join(ASYNC_DIR, id);
 	try {
 		fs.mkdirSync(asyncDir, { recursive: true });
 	} catch (error) {
@@ -393,7 +402,7 @@ export function executeAsyncChain(
 			{
 				id,
 				steps,
-				resultPath: path.join(RESULTS_DIR, `${id}.json`),
+				resultPath: inheritedNestedRoute ? nestedResultsPath(inheritedNestedRoute.rootRunId, id) : path.join(RESULTS_DIR, `${id}.json`),
 				cwd: runnerCwd,
 				placeholder: "{previous}",
 				maxOutput,
@@ -411,6 +420,13 @@ export function executeAsyncChain(
 				controlIntercomTarget,
 				childIntercomTargets,
 				resultMode,
+				nestedRoute: nestedRoute ?? inheritedNestedRoute,
+				nestedSelf: inheritedNestedRoute && nestedAddress ? {
+					parentRunId: nestedAddress.parentRunId,
+					parentStepIndex: nestedAddress.parentStepIndex,
+					depth: nestedAddress.depth,
+					path: nestedAddress.path,
+				} : undefined,
 			},
 			id,
 			runnerCwd,
@@ -443,6 +459,40 @@ export function executeAsyncChain(
 				flatStepStart++;
 			}
 		}
+		if (inheritedNestedRoute && nestedAddress) {
+			const now = Date.now();
+			try {
+				writeNestedEvent(inheritedNestedRoute, {
+					type: "subagent.nested.started",
+					ts: now,
+					parentRunId: nestedAddress.parentRunId,
+					parentStepIndex: nestedAddress.parentStepIndex,
+					child: {
+						id,
+						parentRunId: nestedAddress.parentRunId,
+						parentStepIndex: nestedAddress.parentStepIndex,
+						depth: nestedAddress.depth,
+						path: nestedAddress.path,
+						asyncDir,
+						pid: spawnResult.pid,
+						ownerIntercomTarget: process.env.PI_SUBAGENT_INTERCOM_SESSION_NAME,
+						leafIntercomTarget: childIntercomTargets?.[0],
+						intercomTarget: childIntercomTargets?.[0],
+						ownerState: "live",
+						mode: resultMode,
+						state: "running",
+						agent: firstAgents[0],
+						agents: flatAgents,
+						chainStepCount: chain.length,
+						parallelGroups,
+						startedAt: now,
+						lastUpdate: now,
+					},
+				});
+			} catch (error) {
+				console.error("Failed to emit nested async start event:", error);
+			}
+		}
 		ctx.pi.events.emit(SUBAGENT_ASYNC_STARTED_EVENT, {
 			id,
 			pid: spawnResult.pid,
@@ -460,6 +510,7 @@ export function executeAsyncChain(
 			parallelGroups,
 			cwd: runnerCwd,
 			asyncDir,
+			nestedRoute,
 		});
 	}
 
@@ -499,6 +550,7 @@ export function executeAsyncSingle(
 		controlConfig,
 		controlIntercomTarget,
 		childIntercomTarget,
+		nestedRoute,
 	} = params;
 	const task = params.task ?? "";
 	const runnerCwd = resolveChildCwd(ctx.cwd, cwd);
@@ -512,7 +564,11 @@ export function executeAsyncSingle(
 		systemPrompt = systemPrompt ? `${systemPrompt}\n\n${injection}` : injection;
 	}
 
-	const asyncDir = path.join(ASYNC_DIR, id);
+	const inheritedNestedRoute = resolveInheritedNestedRouteFromEnv();
+	const nestedAddress = inheritedNestedRoute ? resolveNestedParentAddressFromEnv() : undefined;
+	const asyncDir = inheritedNestedRoute
+		? path.join(TEMP_ROOT_DIR, "nested-subagent-runs", inheritedNestedRoute.rootRunId, id)
+		: path.join(ASYNC_DIR, id);
 	try {
 		fs.mkdirSync(asyncDir, { recursive: true });
 	} catch (error) {
@@ -564,7 +620,7 @@ export function executeAsyncSingle(
 						maxSubagentDepth: resolveChildMaxSubagentDepth(maxSubagentDepth, agentConfig.maxSubagentDepth),
 					},
 				],
-				resultPath: path.join(RESULTS_DIR, `${id}.json`),
+				resultPath: inheritedNestedRoute ? nestedResultsPath(inheritedNestedRoute.rootRunId, id) : path.join(RESULTS_DIR, `${id}.json`),
 				cwd: runnerCwd,
 				placeholder: "{previous}",
 				maxOutput,
@@ -582,6 +638,13 @@ export function executeAsyncSingle(
 				controlIntercomTarget,
 				childIntercomTargets: childIntercomTarget ? [childIntercomTarget(agent, 0)] : undefined,
 				resultMode: "single",
+				nestedRoute: nestedRoute ?? inheritedNestedRoute,
+				nestedSelf: inheritedNestedRoute && nestedAddress ? {
+					parentRunId: nestedAddress.parentRunId,
+					parentStepIndex: nestedAddress.parentStepIndex,
+					depth: nestedAddress.depth,
+					path: nestedAddress.path,
+				} : undefined,
 			},
 			id,
 			runnerCwd,
@@ -596,6 +659,39 @@ export function executeAsyncSingle(
 	}
 
 	if (spawnResult.pid) {
+		if (inheritedNestedRoute && nestedAddress) {
+			const now = Date.now();
+			try {
+				writeNestedEvent(inheritedNestedRoute, {
+					type: "subagent.nested.started",
+					ts: now,
+					parentRunId: nestedAddress.parentRunId,
+					parentStepIndex: nestedAddress.parentStepIndex,
+					child: {
+						id,
+						parentRunId: nestedAddress.parentRunId,
+						parentStepIndex: nestedAddress.parentStepIndex,
+						depth: nestedAddress.depth,
+						path: nestedAddress.path,
+						asyncDir,
+						pid: spawnResult.pid,
+						ownerIntercomTarget: process.env.PI_SUBAGENT_INTERCOM_SESSION_NAME,
+						leafIntercomTarget: childIntercomTarget?.(agent, 0),
+						intercomTarget: childIntercomTarget?.(agent, 0),
+						ownerState: "live",
+						mode: "single",
+						state: "running",
+						agent,
+						agents: [agent],
+						chainStepCount: 1,
+						startedAt: now,
+						lastUpdate: now,
+					},
+				});
+			} catch (error) {
+				console.error("Failed to emit nested async start event:", error);
+			}
+		}
 		ctx.pi.events.emit(SUBAGENT_ASYNC_STARTED_EVENT, {
 			id,
 			pid: spawnResult.pid,
@@ -605,6 +701,7 @@ export function executeAsyncSingle(
 			task: task?.slice(0, 50),
 			cwd: runnerCwd,
 			asyncDir,
+			nestedRoute,
 		});
 	}
 

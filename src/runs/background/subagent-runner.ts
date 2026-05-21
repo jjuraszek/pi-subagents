@@ -14,6 +14,7 @@ import {
 	type AsyncParallelGroupStatus,
 	type AsyncStatus,
 	type ModelAttempt,
+	type NestedRouteInfo,
 	type ResolvedControlConfig,
 	type SubagentRunMode,
 	type Usage,
@@ -40,6 +41,7 @@ import {
 	MAX_PARALLEL_CONCURRENCY,
 } from "../shared/parallel-utils.ts";
 import { buildPiArgs, cleanupTempDir } from "../shared/pi-args.ts";
+import { nestedSummaryFromAsyncStatus, writeNestedEvent } from "../shared/nested-events.ts";
 import { formatModelAttemptNote, isRetryableModelFailure } from "../shared/model-fallback.ts";
 import { attachPostExitStdioGuard, trySignalChild } from "../../shared/post-exit-stdio-guard.ts";
 import { detectSubagentError, extractTextFromContent, extractToolArgsPreview, getFinalOutput } from "../../shared/utils.ts";
@@ -92,6 +94,8 @@ interface SubagentRunConfig {
 	controlIntercomTarget?: string;
 	childIntercomTargets?: Array<string | undefined>;
 	resultMode?: SubagentRunMode;
+	nestedRoute?: NestedRouteInfo;
+	nestedSelf?: { parentRunId: string; parentStepIndex?: number; depth: number; path?: Array<{ runId: string; stepIndex?: number; agent?: string }> };
 }
 
 interface StepResult {
@@ -554,6 +558,7 @@ interface SingleStepContext {
 	registerInterrupt?: (interrupt: (() => void) | undefined) => void;
 	childIntercomTarget?: string;
 	orchestratorIntercomTarget?: string;
+	nestedRoute?: NestedRouteInfo;
 	onAttemptStart?: (attempt: { model?: string; thinking?: string }) => void;
 	onChildEvent?: (event: ChildEvent) => void;
 }
@@ -629,6 +634,10 @@ async function runSingleStep(
 			runId: ctx.id,
 			childAgentName: step.agent,
 			childIndex: ctx.flatIndex,
+			parentEventSink: ctx.nestedRoute?.eventSink,
+			parentControlInbox: ctx.nestedRoute?.controlInbox,
+			parentRootRunId: ctx.nestedRoute?.rootRunId,
+			parentCapabilityToken: ctx.nestedRoute?.capabilityToken,
 		});
 		const run = await runPiStreaming(
 			args,
@@ -938,6 +947,32 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 
 	fs.mkdirSync(asyncDir, { recursive: true });
 	writeAtomicJson(statusPath, statusPayload);
+	const emitNestedSelfEvent = (type: "subagent.nested.updated" | "subagent.nested.completed"): void => {
+		if (!config.nestedRoute || !config.nestedSelf) return;
+		try {
+			writeNestedEvent(config.nestedRoute, {
+				type,
+				ts: Date.now(),
+				parentRunId: config.nestedSelf.parentRunId,
+				parentStepIndex: config.nestedSelf.parentStepIndex,
+				child: nestedSummaryFromAsyncStatus(statusPayload, asyncDir, {
+					id,
+					parentRunId: config.nestedSelf.parentRunId,
+					parentStepIndex: config.nestedSelf.parentStepIndex,
+					depth: config.nestedSelf.depth,
+					path: config.nestedSelf.path,
+					mode: statusPayload.mode,
+					ts: Date.now(),
+				}),
+			});
+		} catch (error) {
+			console.error("Failed to emit nested async status event:", error);
+		}
+	};
+	const writeStatusPayload = (): void => {
+		writeAtomicJson(statusPath, statusPayload);
+		emitNestedSelfEvent(statusPayload.state === "running" || statusPayload.state === "queued" ? "subagent.nested.updated" : "subagent.nested.completed");
+	};
 
 	const stepOutputActivityAt = (index: number): number => {
 		const step = statusPayload.steps[index];
@@ -1028,7 +1063,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 		step.model = model;
 		step.thinking = thinking;
 		statusPayload.lastUpdate = now;
-		writeAtomicJson(statusPath, statusPayload);
+		writeStatusPayload();
 	};
 	const updateStepFromChildEvent = (flatIndex: number, event: ChildEvent): void => {
 		const step = statusPayload.steps[flatIndex];
@@ -1116,7 +1151,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 		statusPayload.lastActivityAt = now;
 		statusPayload.lastUpdate = now;
 		maybeEmitActiveLongRunning(flatIndex, now);
-		writeAtomicJson(statusPath, statusPayload);
+		writeStatusPayload();
 	};
 	const updateRunnerActivityState = (now: number): boolean => {
 		if (!controlConfig.enabled) return false;
@@ -1171,7 +1206,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 			changed = true;
 		}
 		statusPayload.lastUpdate = now;
-		if (changed) writeAtomicJson(statusPath, statusPayload);
+		if (changed) writeStatusPayload();
 		return changed;
 	};
 	if (controlConfig.enabled) {
@@ -1200,7 +1235,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				step.lastActivityAt = now;
 			}
 		}
-		writeAtomicJson(statusPath, statusPayload);
+		writeStatusPayload();
 		appendJsonl(eventsPath, JSON.stringify({
 			type: "subagent.run.paused",
 			ts: now,
@@ -1311,7 +1346,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 							statusPayload.steps[fi].exitCode = -1;
 							statusPayload.steps[fi].activityState = undefined;
 							statusPayload.lastUpdate = skippedAt;
-							writeAtomicJson(statusPath, statusPayload);
+							writeStatusPayload();
 							appendJsonl(eventsPath, JSON.stringify({
 								type: "subagent.step.failed", ts: skippedAt, runId: id, stepIndex: fi, agent: task.agent, exitCode: -1, durationMs: 0,
 							}));
@@ -1331,7 +1366,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 						statusPayload.outputFile = path.join(asyncDir, `output-${fi}.log`);
 						statusPayload.lastActivityAt = taskStartTime;
 						statusPayload.lastUpdate = taskStartTime;
-						writeAtomicJson(statusPath, statusPayload);
+						writeStatusPayload();
 
 						appendJsonl(eventsPath, JSON.stringify({
 							type: "subagent.step.started", ts: taskStartTime, runId: id, stepIndex: fi, agent: task.agent,
@@ -1352,6 +1387,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 							piArgv1: config.piArgv1,
 							childIntercomTarget: config.childIntercomTargets?.[fi],
 							orchestratorIntercomTarget: config.controlIntercomTarget,
+							nestedRoute: config.nestedRoute,
 							registerInterrupt: (interrupt) => {
 								activeChildInterrupt = interrupt;
 							},
@@ -1375,7 +1411,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 						statusPayload.steps[fi].modelAttempts = singleResult.modelAttempts;
 						statusPayload.steps[fi].error = singleResult.error;
 						statusPayload.lastUpdate = taskEndTime;
-						writeAtomicJson(statusPath, statusPayload);
+						writeStatusPayload();
 
 						appendJsonl(eventsPath, JSON.stringify({
 							type: singleResult.exitCode === 0 ? "subagent.step.completed" : "subagent.step.failed",
@@ -1419,7 +1455,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				}
 				statusPayload.totalTokens = { ...previousCumulativeTokens };
 				statusPayload.lastUpdate = Date.now();
-				writeAtomicJson(statusPath, statusPayload);
+				writeStatusPayload();
 
 				for (const pr of parallelResults) {
 					results.push({
@@ -1477,7 +1513,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 			statusPayload.lastActivityAt = stepStartTime;
 			statusPayload.lastUpdate = stepStartTime;
 			statusPayload.outputFile = path.join(asyncDir, `output-${flatIndex}.log`);
-			writeAtomicJson(statusPath, statusPayload);
+			writeStatusPayload();
 
 			appendJsonl(eventsPath, JSON.stringify({
 				type: "subagent.step.started",
@@ -1497,6 +1533,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				piArgv1: config.piArgv1,
 				childIntercomTarget: config.childIntercomTargets?.[flatIndex],
 				orchestratorIntercomTarget: config.controlIntercomTarget,
+				nestedRoute: config.nestedRoute,
 				registerInterrupt: (interrupt) => {
 					activeChildInterrupt = interrupt;
 				},
@@ -1557,7 +1594,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				statusPayload.totalTokens = { ...previousCumulativeTokens };
 			}
 			statusPayload.lastUpdate = stepEndTime;
-			writeAtomicJson(statusPath, statusPayload);
+			writeStatusPayload();
 
 			appendJsonl(eventsPath, JSON.stringify({
 				type: singleResult.exitCode === 0 ? "subagent.step.completed" : "subagent.step.failed",
@@ -1659,7 +1696,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 			statusPayload.error = `Step failed: ${failedStep.agent}`;
 		}
 	}
-	writeAtomicJson(statusPath, statusPayload);
+	writeStatusPayload();
 	appendJsonl(
 		eventsPath,
 		JSON.stringify({

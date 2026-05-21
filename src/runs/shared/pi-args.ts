@@ -7,11 +7,21 @@ import { resolveMcpDirectToolNames } from "./mcp-direct-tool-allowlist.ts";
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const TASK_ARG_LIMIT = 8000;
 const PROMPT_RUNTIME_EXTENSION_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "subagent-prompt-runtime.ts");
+const FANOUT_CHILD_EXTENSION_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "extension", "fanout-child.ts");
 export const SUBAGENT_CHILD_ENV = "PI_SUBAGENT_CHILD";
 export const SUBAGENT_ORCHESTRATOR_TARGET_ENV = "PI_SUBAGENT_ORCHESTRATOR_TARGET";
 export const SUBAGENT_RUN_ID_ENV = "PI_SUBAGENT_RUN_ID";
 export const SUBAGENT_CHILD_AGENT_ENV = "PI_SUBAGENT_CHILD_AGENT";
 export const SUBAGENT_CHILD_INDEX_ENV = "PI_SUBAGENT_CHILD_INDEX";
+export const SUBAGENT_FANOUT_CHILD_ENV = "PI_SUBAGENT_FANOUT_CHILD";
+export const SUBAGENT_PARENT_EVENT_SINK_ENV = "PI_SUBAGENT_PARENT_EVENT_SINK";
+export const SUBAGENT_PARENT_CONTROL_INBOX_ENV = "PI_SUBAGENT_PARENT_CONTROL_INBOX";
+export const SUBAGENT_PARENT_ROOT_RUN_ID_ENV = "PI_SUBAGENT_PARENT_ROOT_RUN_ID";
+export const SUBAGENT_PARENT_RUN_ID_ENV = "PI_SUBAGENT_PARENT_RUN_ID";
+export const SUBAGENT_PARENT_CHILD_INDEX_ENV = "PI_SUBAGENT_PARENT_CHILD_INDEX";
+export const SUBAGENT_PARENT_DEPTH_ENV = "PI_SUBAGENT_PARENT_DEPTH";
+export const SUBAGENT_PARENT_PATH_ENV = "PI_SUBAGENT_PARENT_PATH";
+export const SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV = "PI_SUBAGENT_PARENT_CAPABILITY_TOKEN";
 
 interface BuildPiArgsInput {
 	baseArgs: string[];
@@ -35,6 +45,14 @@ interface BuildPiArgsInput {
 	runId?: string;
 	childAgentName?: string;
 	childIndex?: number;
+	parentEventSink?: string;
+	parentControlInbox?: string;
+	parentRootRunId?: string;
+	parentRunId?: string;
+	parentChildIndex?: number;
+	parentDepth?: number;
+	parentPath?: Array<{ runId: string; stepIndex?: number; agent?: string }>;
+	parentCapabilityToken?: string;
 }
 
 interface BuildPiArgsResult {
@@ -71,14 +89,14 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		args.push("--model", modelArg);
 	}
 
+	const declaredBuiltinTools = input.tools?.filter((tool) => !(tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js"))) ?? [];
+	const fanoutAuthorized = declaredBuiltinTools.includes("subagent");
 	const toolExtensionPaths: string[] = [];
 	if (input.tools?.length) {
-		const builtinTools: string[] = [];
+		const builtinTools = [...declaredBuiltinTools];
 		for (const tool of input.tools) {
-			if (tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js")) {
+			if (!declaredBuiltinTools.includes(tool) && (tool.includes("/") || tool.endsWith(".ts") || tool.endsWith(".js"))) {
 				toolExtensionPaths.push(tool);
-			} else {
-				builtinTools.push(tool);
 			}
 		}
 		if (builtinTools.length > 0) {
@@ -89,7 +107,9 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 		}
 	}
 
-	const runtimeExtensions = [PROMPT_RUNTIME_EXTENSION_PATH];
+	const runtimeExtensions = fanoutAuthorized
+		? [PROMPT_RUNTIME_EXTENSION_PATH, FANOUT_CHILD_EXTENSION_PATH]
+		: [PROMPT_RUNTIME_EXTENSION_PATH];
 	if (input.extensions !== undefined) {
 		args.push("--no-extensions");
 		for (const extPath of [...new Set([...runtimeExtensions, ...toolExtensionPaths, ...input.extensions])]) {
@@ -127,6 +147,40 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 
 	const env: Record<string, string | undefined> = {};
 	env[SUBAGENT_CHILD_ENV] = "1";
+	env[SUBAGENT_FANOUT_CHILD_ENV] = fanoutAuthorized ? "1" : "0";
+	const inheritedNestedRoute = Boolean(process.env[SUBAGENT_PARENT_EVENT_SINK_ENV] && process.env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV] && process.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV]);
+	const parentRunId = input.parentRunId ?? input.runId ?? (inheritedNestedRoute ? process.env[SUBAGENT_RUN_ID_ENV] : undefined) ?? process.env[SUBAGENT_PARENT_RUN_ID_ENV] ?? "";
+	const parentChildIndex = input.parentChildIndex !== undefined
+		? String(input.parentChildIndex)
+		: input.childIndex !== undefined
+			? String(input.childIndex)
+			: process.env[SUBAGENT_PARENT_CHILD_INDEX_ENV] ?? "";
+	const inheritedDepth = Number(process.env[SUBAGENT_PARENT_DEPTH_ENV]);
+	const parentDepth = input.parentDepth ?? (inheritedNestedRoute && Number.isFinite(inheritedDepth) ? inheritedDepth + 1 : 1);
+	const parentPath = input.parentPath ?? [
+		...parseParentPathEnv(process.env[SUBAGENT_PARENT_PATH_ENV]),
+		...(parentRunId ? [{
+			runId: parentRunId,
+			...(parentChildIndex && /^\d+$/.test(parentChildIndex) ? { stepIndex: Number(parentChildIndex) } : {}),
+			...(input.childAgentName ? { agent: input.childAgentName } : {}),
+		}] : []),
+	];
+	env[SUBAGENT_PARENT_EVENT_SINK_ENV] = fanoutAuthorized
+		? input.parentEventSink ?? process.env[SUBAGENT_PARENT_EVENT_SINK_ENV] ?? ""
+		: "";
+	env[SUBAGENT_PARENT_CONTROL_INBOX_ENV] = fanoutAuthorized
+		? input.parentControlInbox ?? process.env[SUBAGENT_PARENT_CONTROL_INBOX_ENV] ?? ""
+		: "";
+	env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV] = fanoutAuthorized
+		? input.parentRootRunId ?? process.env[SUBAGENT_PARENT_ROOT_RUN_ID_ENV] ?? input.runId ?? ""
+		: "";
+	env[SUBAGENT_PARENT_RUN_ID_ENV] = fanoutAuthorized ? parentRunId : "";
+	env[SUBAGENT_PARENT_CHILD_INDEX_ENV] = fanoutAuthorized ? parentChildIndex : "";
+	env[SUBAGENT_PARENT_DEPTH_ENV] = fanoutAuthorized ? String(parentDepth) : "";
+	env[SUBAGENT_PARENT_PATH_ENV] = fanoutAuthorized && parentPath.length ? JSON.stringify(parentPath.slice(0, 4)) : "";
+	env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV] = fanoutAuthorized
+		? input.parentCapabilityToken ?? process.env[SUBAGENT_PARENT_CAPABILITY_TOKEN_ENV] ?? ""
+		: "";
 	env.PI_SUBAGENT_INHERIT_PROJECT_CONTEXT = input.inheritProjectContext ? "1" : "0";
 	env.PI_SUBAGENT_INHERIT_SKILLS = input.inheritSkills ? "1" : "0";
 	if (input.intercomSessionName) {
@@ -151,6 +205,27 @@ export function buildPiArgs(input: BuildPiArgsInput): BuildPiArgsResult {
 	}
 
 	return { args, env, tempDir };
+}
+
+export function parseParentPathEnv(value: string | undefined): Array<{ runId: string; stepIndex?: number; agent?: string }> {
+	if (!value) return [];
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		if (!Array.isArray(parsed)) return [];
+		return parsed.flatMap((item) => {
+			if (!item || typeof item !== "object") return [];
+			const record = item as Record<string, unknown>;
+			return typeof record.runId === "string" && record.runId.length > 0
+				? [{
+					runId: record.runId,
+					...(typeof record.stepIndex === "number" && Number.isFinite(record.stepIndex) ? { stepIndex: record.stepIndex } : {}),
+					...(typeof record.agent === "string" && record.agent.length > 0 ? { agent: record.agent } : {}),
+				}]
+				: [];
+		});
+	} catch {
+		return [];
+	}
 }
 
 export function cleanupTempDir(tempDir: string | null | undefined): void {

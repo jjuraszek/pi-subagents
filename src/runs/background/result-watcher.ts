@@ -5,13 +5,17 @@ import { createFileCoalescer } from "../../shared/file-coalescer.ts";
 import {
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
 	type IntercomEventBus,
+	type NestedRunSummary,
 	type SubagentState,
 } from "../../shared/types.ts";
 import {
+	attachNestedChildrenToResultChildren,
 	buildSubagentResultIntercomPayload,
+	compactNestedResultChildren,
 	deliverSubagentResultIntercomEvent,
 	resolveSubagentResultStatus,
 } from "../../intercom/result-intercom.ts";
+import { projectNestedRegistryForRoot, sanitizeSummary } from "../shared/nested-events.ts";
 
 const WATCHER_RESTART_DELAY_MS = 3000;
 const POLL_INTERVAL_MS = 3000;
@@ -29,6 +33,30 @@ type ResultWatcherDeps = {
 	fs?: ResultWatcherFs;
 	timers?: ResultWatcherTimers;
 };
+
+type ResultFileChild = {
+	agent?: string;
+	output?: string;
+	error?: string;
+	success?: boolean;
+	sessionFile?: string;
+	artifactPaths?: { outputPath?: string };
+	intercomTarget?: string;
+	children?: unknown;
+};
+
+function sanitizeNestedResultChildren(value: unknown, resultPath: string, label: string): NestedRunSummary[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) {
+		console.error(`Ignoring invalid nested children in subagent result file '${resultPath}' at ${label}: expected an array.`);
+		return undefined;
+	}
+	const children = value.map((child) => sanitizeSummary(child)).filter((child): child is NestedRunSummary => Boolean(child));
+	if (children.length !== value.length) {
+		console.error(`Ignoring ${value.length - children.length} invalid nested child record(s) in subagent result file '${resultPath}' at ${label}.`);
+	}
+	return children.length ? children : undefined;
+}
 
 function getErrorCode(error: unknown): string | undefined {
 	return typeof error === "object" && error !== null && "code" in error
@@ -71,15 +99,8 @@ export function createResultWatcher(
 				state?: string;
 				mode?: string;
 				summary?: string;
-				results?: Array<{
-					agent?: string;
-					output?: string;
-					error?: string;
-					success?: boolean;
-					sessionFile?: string;
-					artifactPaths?: { outputPath?: string };
-					intercomTarget?: string;
-				}>;
+				results?: ResultFileChild[];
+				nestedChildren?: unknown;
 				sessionId?: string;
 				cwd?: string;
 				sessionFile?: string;
@@ -96,6 +117,17 @@ export function createResultWatcher(
 				return;
 			}
 
+			const runId = data.runId ?? data.id ?? file.replace(/\.json$/i, "");
+			const hasExplicitNestedChildren = data.nestedChildren !== undefined;
+			let nestedChildren = compactNestedResultChildren(sanitizeNestedResultChildren(data.nestedChildren, resultPath, "nestedChildren"));
+			if (!nestedChildren?.length && !hasExplicitNestedChildren) {
+				try {
+					nestedChildren = compactNestedResultChildren(projectNestedRegistryForRoot(runId)?.children);
+				} catch (error) {
+					console.error(`Failed to enrich subagent result file '${resultPath}' with nested registry children; will retry later:`, error);
+					return;
+				}
+			}
 			const intercomTarget = data.intercomTarget?.trim();
 			if (intercomTarget) {
 				const childResults = Array.isArray(data.results) && data.results.length > 0
@@ -105,7 +137,6 @@ export function createResultWatcher(
 						output: data.summary,
 						success: data.success,
 					}];
-				const runId = data.runId ?? data.id ?? file.replace(/\.json$/i, "");
 				const mode = data.mode === "single" || data.mode === "parallel" || data.mode === "chain"
 					? data.mode
 					: childResults.length > 1 ? "chain" : "single";
@@ -114,7 +145,7 @@ export function createResultWatcher(
 					runId,
 					mode,
 					source: "async",
-					children: childResults.map((result = {}, index) => {
+					children: attachNestedChildrenToResultChildren(runId, childResults.map((result = {}, index) => {
 						const baseOutput = result.output ?? data.summary;
 						const hasRealOutput = typeof baseOutput === "string" && baseOutput.trim().length > 0;
 						const output = hasRealOutput ? baseOutput : "(no output)";
@@ -122,6 +153,7 @@ export function createResultWatcher(
 							? `${result.error}${hasRealOutput ? `\n\nOutput:\n${baseOutput}` : ""}`
 							: output;
 						const sessionPath = result.sessionFile ?? (childResults.length === 1 ? data.sessionFile : undefined);
+						const childNestedChildren = sanitizeNestedResultChildren(result.children, resultPath, `results[${index}].children`);
 						return {
 							agent: result.agent ?? data.agent ?? `step-${index + 1}`,
 							status: resolveSubagentResultStatus({
@@ -133,8 +165,9 @@ export function createResultWatcher(
 							artifactPath: result.artifactPaths?.outputPath,
 							...(typeof sessionPath === "string" && fsApi.existsSync(sessionPath) ? { sessionPath } : {}),
 							intercomTarget: result.intercomTarget,
+							...(childNestedChildren ? { children: childNestedChildren } : {}),
 						};
-					}),
+					}), nestedChildren),
 					asyncId: data.id,
 					asyncDir: data.asyncDir,
 				});
@@ -144,7 +177,27 @@ export function createResultWatcher(
 				}
 			}
 
-			pi.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, data);
+			pi.events.emit(SUBAGENT_ASYNC_COMPLETE_EVENT, {
+				...data,
+				runId,
+				...(nestedChildren?.length ? { nestedChildren } : {}),
+				...(Array.isArray(data.results) ? {
+					results: attachNestedChildrenToResultChildren(runId, data.results.map((result, index) => {
+						const childNestedChildren = sanitizeNestedResultChildren(result.children, resultPath, `results[${index}].children`);
+						return {
+							...result,
+							agent: result.agent ?? data.agent ?? `step-${index + 1}`,
+							status: resolveSubagentResultStatus({
+								success: result.success,
+								state: data.state === "paused" || typeof result.success !== "boolean" ? data.state : undefined,
+							}),
+							summary: result.output ?? data.summary ?? "",
+							index,
+							children: childNestedChildren,
+						};
+					}), nestedChildren),
+				} : {}),
+			});
 			fsApi.unlinkSync(resultPath);
 		} catch (error) {
 			if (isNotFoundError(error)) return;
