@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+- Apply `subagents.agentOverrides[name]` to user-scope and project-scope custom agents in addition to builtins. Frontmatter wins per-field — overrides only fill fields the agent's frontmatter left unset, so existing custom agents that pin their own model/thinking/etc. are unaffected. Lets shared persona files (`.pi/agents/<name>.md`) stay version-controlled while per-harness `settings.json` supplies the local model. `disableBuiltins` continues to apply only to builtins.
+- Skip `skills/` subtrees and `SKILL.md` files when discovering markdown agents and chains, so repo skills are no longer loaded as agent personas.
+
 ## [0.26.0] - 2026-05-29
 
 ### Added
@@ -12,7 +16,6 @@
 ### Fixed
 - Fixed dynamic fanout acceptance blockers around real `structured_output` tool validation, malformed dynamic-like chain rejection, async dynamic failure status/details, dynamic child intercom target indexing, and saved `.chain.json` management diagnostics.
 - Fixed acceptance-gate semantics so reviewed status requires an independent reviewer result, required criteria must be reported as satisfied, only fenced `acceptance-report` blocks satisfy attestation, malformed reports preserve parse errors, `{ level: "none", reason }` disables inferred gates, and zero-child dynamic aggregates no longer fabricate evidence.
-
 ## [0.25.0] - 2026-05-21
 
 ### Added
