@@ -2,9 +2,16 @@
 
 ## [Unreleased]
 
+## [0.26.0-jj.1] - 2026-05-30
+
+Fork release (`jjuraszek/pi-subagents`) on top of upstream v0.26.0. See [AGENTS.md](AGENTS.md) for the fork/release model.
+
 ### Added
-- Apply `subagents.agentOverrides[name]` to user-scope and project-scope custom agents in addition to builtins. Frontmatter wins per-field — overrides only fill fields the agent's frontmatter left unset, so existing custom agents that pin their own model/thinking/etc. are unaffected. Lets shared persona files (`.pi/agents/<name>.md`) stay version-controlled while per-harness `settings.json` supplies the local model. `disableBuiltins` continues to apply only to builtins.
-- Skip `skills/` subtrees and `SKILL.md` files when discovering markdown agents and chains, so repo skills are no longer loaded as agent personas.
+- Apply `subagents.agentOverrides[name]` to user-scope and project-scope custom agents in addition to builtins. Frontmatter wins per-field — overrides only fill fields the agent's frontmatter left unset, so existing custom agents that pin their own model/thinking/etc. are unaffected. Lets shared persona files (`.pi/agents/<name>.md`) stay version-controlled while per-harness `settings.json` supplies the local model. `disableBuiltins` continues to apply only to builtins. (upstream [PR #219](https://github.com/nicobailon/pi-subagents/pull/219))
+
+### Changed
+- **Agent and chain discovery now reads each root flat (top-level files only).** Subdirectories are no longer scanned recursively, so `skills/<name>/SKILL.md` and any other nested `*.md` are never loaded as agent personas. `SKILL.md` is additionally excluded by name. Personas placed in subfolders to "organize" them will no longer be discovered — move them to the top level of an agent root. **Breaking** for setups relying on nested layouts.
+- **Agent discovery precedence is now defined in one place and the two user roots are reordered.** Lowest→highest: builtin `< ~/.agents < <PI_CODING_AGENT_DIR>/agents < <repo>/.agents < <repo>/.pi/agents`. Previously `~/.agents` outranked `<PI_CODING_AGENT_DIR>/agents`. **Breaking** if you relied on `~/.agents` overriding the pi-profile root. `PI_CODING_AGENT_DIR` relocates the pi profile root but is explicitly **not** a discovery sandbox — `~/.agents` is always scanned as the lowest-priority user layer.
 
 ## [0.26.0] - 2026-05-29
 

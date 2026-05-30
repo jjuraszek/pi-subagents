@@ -651,34 +651,46 @@ export function removeBuiltinAgentOverride(cwd: string, name: string, scope: "us
 	return filePath;
 }
 
-function listFilesRecursive(dir: string, predicate: (fileName: string) => boolean): string[] {
-	const files: string[] = [];
-	if (!fs.existsSync(dir)) return files;
+// Subtrees never scanned for agents/chains. `skills/` holds skill packages
+// (each with a `SKILL.md` carrying name+description frontmatter that would
+// otherwise be mistaken for an agent persona).
+// Discovery reads agent/chain roots FLAT (top-level entries only). Subdirectories
+// are reserved for typed content (skills/, chains/) and are never scanned for
+// personas, so a repo's skills/<name>/SKILL.md is never mistaken for an agent.
+function listFilesFlat(dir: string, predicate: (fileName: string) => boolean): string[] {
+	if (!fs.existsSync(dir)) return [];
 
 	let entries: fs.Dirent[];
 	try {
 		entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
 	} catch {
-		return files;
+		return [];
 	}
 
+	const files: string[] = [];
 	for (const entry of entries) {
-		const filePath = path.join(dir, entry.name);
-		if (entry.isDirectory()) {
-			files.push(...listFilesRecursive(filePath, predicate));
-			continue;
-		}
 		if (!entry.isFile() && !entry.isSymbolicLink()) continue;
 		if (!predicate(entry.name)) continue;
-		files.push(filePath);
+		files.push(path.join(dir, entry.name));
 	}
 	return files;
+}
+
+// A persona file is a top-level *.md that is neither a chain definition nor a
+// skill manifest. SKILL.md is excluded by name because it carries name+description
+// frontmatter and would otherwise be loaded as an agent.
+function isAgentFileName(fileName: string): boolean {
+	return fileName.endsWith(".md") && !fileName.endsWith(".chain.md") && fileName !== "SKILL.md";
+}
+
+function isChainFileName(fileName: string): boolean {
+	return fileName.endsWith(".chain.md") || fileName.endsWith(".chain.json");
 }
 
 function loadAgentsFromDir(dir: string, source: AgentSource): AgentConfig[] {
 	const agents: AgentConfig[] = [];
 
-	for (const filePath of listFilesRecursive(dir, (fileName) => fileName.endsWith(".md") && !fileName.endsWith(".chain.md"))) {
+	for (const filePath of listFilesFlat(dir, isAgentFileName)) {
 		let content: string;
 		try {
 			content = fs.readFileSync(filePath, "utf-8");
@@ -809,7 +821,7 @@ function loadChainsFromDir(dir: string, source: "user" | "project"): { chains: C
 	const chains = new Map<string, ChainConfig>();
 	const diagnostics: ChainDiscoveryDiagnostic[] = [];
 
-	for (const filePath of listFilesRecursive(dir, (fileName) => fileName.endsWith(".chain.md") || fileName.endsWith(".chain.json"))) {
+	for (const filePath of listFilesFlat(dir, isChainFileName)) {
 		let content: string;
 		try {
 			content = fs.readFileSync(filePath, "utf-8");
@@ -837,6 +849,38 @@ function isDirectory(p: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+// Single source of truth for agent persona discovery precedence.
+//
+// Roots are listed LOWEST -> HIGHEST priority. Downstream merging is
+// last-writer-wins (Map.set / mergeAgentsForScope), so a later root overrides an
+// earlier one on name collision. Builtins are loaded separately from
+// BUILTIN_AGENTS_DIR and sit BELOW every root here:
+//
+//   builtin
+//     < ~/.agents                      global, cross-harness convention
+//     < <PI_CODING_AGENT_DIR>/agents    pi profile (PI_CODING_AGENT_DIR defaults to ~/.pi/agent)
+//     < <repo>/.agents                  project, legacy layout
+//     < <repo>/.pi/agents               project, preferred layout (highest)
+//
+// PI_CODING_AGENT_DIR relocates the pi profile root; it does NOT sandbox
+// discovery. ~/.agents is always scanned regardless of PI_CODING_AGENT_DIR.
+//
+// All roots are read flat (see listFilesFlat): only top-level *.md personas are
+// loaded; subdirectories such as skills/ are never scanned.
+function resolveUserAgentDirs(): string[] {
+	return [
+		path.join(os.homedir(), ".agents"),
+		path.join(getAgentDir(), "agents"),
+	];
+}
+
+// Highest-priority user root: the canonical location for creating new user
+// agents and the value surfaced as `userDir`.
+function preferredUserAgentDir(): string {
+	const dirs = resolveUserAgentDirs();
+	return dirs[dirs.length - 1];
 }
 
 function resolveNearestProjectAgentDirs(cwd: string): { readDirs: string[]; preferredDir: string | null } {
@@ -868,8 +912,7 @@ function resolveNearestProjectChainDirs(cwd: string): { readDirs: string[]; pref
 const BUILTIN_AGENTS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "agents");
 
 export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryResult {
-	const userDirOld = path.join(getAgentDir(), "agents");
-	const userDirNew = path.join(os.homedir(), ".agents");
+	const userDirs = resolveUserAgentDirs();
 	const { readDirs: projectAgentDirs, preferredDir: projectAgentsDir } = resolveNearestProjectAgentDirs(cwd);
 	const userSettingsPath = getUserAgentSettingsPath();
 	const projectSettingsPath = getProjectAgentSettingsPath(cwd);
@@ -884,10 +927,8 @@ export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryRe
 		projectSettingsPath,
 	);
 
-	const userAgentsOld = scope === "project" ? [] : loadAgentsFromDir(userDirOld, "user");
-	const userAgentsNew = scope === "project" ? [] : loadAgentsFromDir(userDirNew, "user");
 	const userAgents = applyCustomAgentOverrides(
-		[...userAgentsOld, ...userAgentsNew],
+		scope === "project" ? [] : userDirs.flatMap((dir) => loadAgentsFromDir(dir, "user")),
 		userSettings,
 		projectSettings,
 		userSettingsPath,
@@ -920,8 +961,7 @@ export function discoverAgentsAll(cwd: string): {
 	userSettingsPath: string;
 	projectSettingsPath: string | null;
 } {
-	const userDirOld = path.join(getAgentDir(), "agents");
-	const userDirNew = path.join(os.homedir(), ".agents");
+	const userDirs = resolveUserAgentDirs();
 	const userChainDir = getUserChainDir();
 	const { readDirs: projectDirs, preferredDir: projectDir } = resolveNearestProjectAgentDirs(cwd);
 	const { readDirs: projectChainDirs, preferredDir: projectChainDir } = resolveNearestProjectChainDirs(cwd);
@@ -938,10 +978,7 @@ export function discoverAgentsAll(cwd: string): {
 		projectSettingsPath,
 	);
 	const user = applyCustomAgentOverrides(
-		[
-			...loadAgentsFromDir(userDirOld, "user"),
-			...loadAgentsFromDir(userDirNew, "user"),
-		],
+		userDirs.flatMap((dir) => loadAgentsFromDir(dir, "user")),
 		userSettings,
 		projectSettings,
 		userSettingsPath,
@@ -980,7 +1017,7 @@ export function discoverAgentsAll(cwd: string): {
 		...projectChainDiagnostics,
 	];
 
-	const userDir = process.env.PI_CODING_AGENT_DIR ? userDirOld : fs.existsSync(userDirNew) ? userDirNew : userDirOld;
+	const userDir = preferredUserAgentDir();
 
 	return { builtin, user, project, chains, chainDiagnostics, userDir, projectDir, userChainDir, projectChainDir, userSettingsPath, projectSettingsPath };
 }

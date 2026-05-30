@@ -357,11 +357,24 @@ Agent locations, lowest to highest priority:
 
 | Scope | Path |
 |-------|------|
-| Builtin | `~/.pi/agent/extensions/subagent/agents/` |
-| User | `~/.pi/agent/agents/**/*.md` |
-| Project | `.pi/agents/**/*.md` |
+| Builtin | `<agent-dir>/extensions/subagent/agents/` |
+| User (global) | `~/.agents/*.md` |
+| User (pi profile) | `<PI_CODING_AGENT_DIR>/agents/*.md` |
+| Project (legacy) | `<repo>/.agents/*.md` |
+| Project (preferred) | `<repo>/.pi/agents/*.md` |
 
-Project discovery also reads legacy `.agents/**/*.md` files. Nested subdirectories are discovered recursively. `.chain.md` files do not define agents. If both `.agents/` and `.pi/agents/` define the same parsed runtime agent name, `.pi/agents/` wins. Use `agentScope: "user" | "project" | "both"` to control discovery; `both` is the default and project definitions win runtime-name collisions.
+> **Fork note.** This fork (`jjuraszek/pi-subagents`) diverges from upstream here: discovery reads each root **flat** (top-level `*.md` only), the two user roots are ordered `~/.agents < <PI_CODING_AGENT_DIR>/agents`, and `SKILL.md` is never loaded as an agent. See [AGENTS.md](AGENTS.md).
+
+`<PI_CODING_AGENT_DIR>` defaults to `~/.pi/agent` when the env var is unset (see [`PI_CODING_AGENT_DIR`](#pi_coding_agent_dir)). Setting it relocates the pi profile root but does **not** sandbox discovery — `~/.agents` is always scanned as the lowest-priority user layer regardless.
+
+Discovery rules:
+
+- **Flat only.** Only top-level `*.md` files in each root are loaded. Subdirectories (`skills/`, `chains/`, or any nesting) are never scanned for personas.
+- **`SKILL.md` is excluded** by name — a skill manifest carries `name` + `description` frontmatter but is not an agent.
+- **`.chain.md` / `.chain.json` files do not define agents.**
+- **Collisions resolve by priority:** a later root in the table above overrides an earlier one for the same parsed runtime agent name. Project beats user; `.pi/agents` beats `.agents`.
+
+Use `agentScope: "user" | "project" | "both"` to control discovery; `both` is the default and project definitions win runtime-name collisions.
 
 Builtin agents load at the lowest priority, so a user or project agent with the same name overrides them. They do not pin a provider model; they inherit your current Pi default model unless you set `subagents.agentOverrides.<name>.model`. `oracle` is an advisory reviewer that critiques direction and proposes an execution prompt without editing files. `worker` is the implementation agent for normal tasks and approved oracle handoffs.
 
@@ -496,10 +509,10 @@ Chains are reusable workflows stored separately from agent files. Use `.chain.md
 
 | Scope | Path |
 |-------|------|
-| User | `~/.pi/agent/chains/**/*.chain.md`, `~/.pi/agent/chains/**/*.chain.json` |
-| Project | `.pi/chains/**/*.chain.md`, `.pi/chains/**/*.chain.json` |
+| User | `<PI_CODING_AGENT_DIR>/chains/*.chain.md`, `<PI_CODING_AGENT_DIR>/chains/*.chain.json` |
+| Project | `<repo>/.pi/chains/*.chain.md`, `<repo>/.pi/chains/*.chain.json` |
 
-Nested subdirectories are discovered recursively. If both `.chain.md` and `.chain.json` define the same parsed runtime chain name in the same scope, `.chain.json` wins. If user and project scopes define the same parsed runtime chain name, the project chain wins. Chains support the same optional `package` frontmatter as agents; `name: review-flow` plus `package: code-analysis` runs as `code-analysis.review-flow`.
+Chain roots are read **flat** (top-level `*.chain.md` / `*.chain.json` only), matching agent discovery in this fork; nested subdirectories are not scanned. If both `.chain.md` and `.chain.json` define the same parsed runtime chain name in the same scope, `.chain.json` wins. If user and project scopes define the same parsed runtime chain name, the project chain wins. Chains support the same optional `package` frontmatter as agents; `name: review-flow` plus `package: code-analysis` runs as `code-analysis.review-flow` (the package comes from frontmatter, not the directory).
 
 Example:
 
@@ -864,7 +877,20 @@ After a worktree parallel step completes, per-agent diff stats are appended to t
 
 ## Configuration
 
-`pi-subagents` reads optional JSON config from `~/.pi/agent/extensions/subagent/config.json`.
+`pi-subagents` reads optional JSON config from `<PI_CODING_AGENT_DIR>/extensions/subagent/config.json`.
+
+### `PI_CODING_AGENT_DIR`
+
+Environment variable that relocates the **pi profile root** (where user agents, chains, settings, extension config, run history, and artifacts live). Resolution:
+
+| Value | Resolves to |
+|-------|-------------|
+| unset | `~/.pi/agent` |
+| `~` | home directory |
+| `~/sub/dir` | `<home>/sub/dir` |
+| absolute/relative path | used as-is |
+
+Setting it moves the `<PI_CODING_AGENT_DIR>/agents`, `/chains`, `/settings.json`, etc. roots. It is **not a discovery sandbox**: the global `~/.agents` root is always scanned as the lowest-priority user layer regardless of this variable, and project roots (`<repo>/.agents`, `<repo>/.pi/agents`) are always scanned relative to the workspace. To fully isolate discovery you must also avoid populating `~/.agents`.
 
 ### `asyncByDefault`
 

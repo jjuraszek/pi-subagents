@@ -435,21 +435,29 @@ Do work
 });
 
 describe("packaged agent and chain discovery", () => {
-	it("recursively discovers nested project agents while keeping chain files separate", () => {
-		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-recursive-agent-discovery-"));
+	it("discovers top-level project agents/chains flat and ignores nested subdirectories", () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-flat-agent-discovery-"));
 		tempDirs.push(dir);
-		const nestedDir = path.join(dir, ".pi", "agents", "code-analysis", "deep");
-		const nestedChainDir = path.join(dir, ".pi", "chains", "code-analysis", "deep");
+		const agentsDir = path.join(dir, ".pi", "agents");
+		const chainsDir = path.join(dir, ".pi", "chains");
+		const nestedDir = path.join(agentsDir, "code-analysis", "deep");
 		fs.mkdirSync(nestedDir, { recursive: true });
-		fs.mkdirSync(nestedChainDir, { recursive: true });
-		fs.writeFileSync(path.join(nestedDir, "scout.md"), `---
+		fs.mkdirSync(chainsDir, { recursive: true });
+		fs.writeFileSync(path.join(agentsDir, "scout.md"), `---
 name: scout
-description: Nested scout
+description: Top-level scout
 ---
 
 Inspect code
 `, "utf-8");
-		fs.writeFileSync(path.join(nestedChainDir, "review.chain.md"), `---
+		fs.writeFileSync(path.join(nestedDir, "buried.md"), `---
+name: buried
+description: Nested scout
+---
+
+Nested
+`, "utf-8");
+		fs.writeFileSync(path.join(chainsDir, "review.chain.md"), `---
 name: review-flow
 description: Review flow
 ---
@@ -460,8 +468,9 @@ Review
 `, "utf-8");
 
 		const result = discoverAgentsAll(dir);
-		assert.ok(result.project.find((agent) => agent.name === "scout" && agent.filePath === path.join(nestedDir, "scout.md")));
-		assert.ok(result.chains.find((chain) => chain.name === "review-flow" && chain.filePath === path.join(nestedChainDir, "review.chain.md")));
+		assert.ok(result.project.find((agent) => agent.name === "scout" && agent.filePath === path.join(agentsDir, "scout.md")));
+		assert.equal(result.project.some((agent) => agent.name === "buried"), false, "nested agents are not discovered (flat reads only)");
+		assert.ok(result.chains.find((chain) => chain.name === "review-flow" && chain.filePath === path.join(chainsDir, "review.chain.md")));
 		assert.equal(result.project.some((agent) => agent.filePath.endsWith("review.chain.md")), false);
 	});
 
@@ -489,11 +498,11 @@ Inspect code
 		assert.doesNotMatch(serialized, /^name: code-analysis\.scout$/m);
 	});
 
-	it("recursively discovers packaged chains by runtime name and preserves package on serialize", () => {
+	it("discovers packaged chains by runtime name and preserves package on serialize", () => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-packaged-chain-"));
 		tempDirs.push(dir);
-		const nestedDir = path.join(dir, ".pi", "chains", "flows");
-		fs.mkdirSync(nestedDir, { recursive: true });
+		const chainsDir = path.join(dir, ".pi", "chains");
+		fs.mkdirSync(chainsDir, { recursive: true });
 		const content = `---
 name: review-flow
 package: code-analysis
@@ -504,7 +513,7 @@ description: Review flow
 
 Inspect {task}
 `;
-		fs.writeFileSync(path.join(nestedDir, "review.chain.md"), content, "utf-8");
+		fs.writeFileSync(path.join(chainsDir, "review.chain.md"), content, "utf-8");
 
 		const chain = discoverAgentsAll(dir).chains.find((candidate) => candidate.name === "code-analysis.review-flow");
 		assert.ok(chain);
@@ -704,7 +713,7 @@ Canonical prompt
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-project-chain-dirs-"));
 		tempDirs.push(dir);
 		fs.mkdirSync(path.join(dir, ".pi", "agents"), { recursive: true });
-		fs.mkdirSync(path.join(dir, ".pi", "chains", "flows"), { recursive: true });
+		fs.mkdirSync(path.join(dir, ".pi", "chains"), { recursive: true });
 		fs.writeFileSync(path.join(dir, ".pi", "agents", "ignored.chain.md"), `---
 name: ignored-chain
 description: Ignored chain
@@ -714,7 +723,7 @@ description: Ignored chain
 
 Ignore
 `, "utf-8");
-		fs.writeFileSync(path.join(dir, ".pi", "chains", "flows", "canonical.chain.md"), `---
+		fs.writeFileSync(path.join(dir, ".pi", "chains", "canonical.chain.md"), `---
 name: canonical-chain
 description: Canonical chain
 ---
@@ -726,7 +735,7 @@ Inspect canonical
 
 		const result = discoverAgentsAll(dir);
 		assert.equal(result.chains.some((chain) => chain.name === "ignored-chain"), false);
-		assert.ok(result.chains.find((chain) => chain.name === "canonical-chain" && chain.filePath === path.join(dir, ".pi", "chains", "flows", "canonical.chain.md")));
+		assert.ok(result.chains.find((chain) => chain.name === "canonical-chain" && chain.filePath === path.join(dir, ".pi", "chains", "canonical.chain.md")));
 		assert.equal(result.projectDir, path.join(dir, ".pi", "agents"));
 		assert.equal(result.projectChainDir, path.join(dir, ".pi", "chains"));
 	});
