@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.26.0-jj.2] - 2026-06-03
+
+Fork-only patch on top of upstream v0.26.0. See [AGENTS.md](AGENTS.md) for the fork/release model.
+
+### Fixed
+- `getFinalOutput` now returns the **last** non-empty text part of the latest non-error assistant message instead of the first. Multi-part assistant outputs (progress/preamble text followed by the real answer) now surface the final answer as the run result. Affects every foreground and background subagent run. (cherry-pick of upstream `efa7120`, not yet released upstream)
+
 ## [0.26.0-jj.1] - 2026-05-30
 
 Fork release (`jjuraszek/pi-subagents`) on top of upstream v0.26.0. See [AGENTS.md](AGENTS.md) for the fork/release model.
