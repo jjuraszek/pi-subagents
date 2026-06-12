@@ -33,6 +33,13 @@ export function defaultInheritSkills(): boolean {
 	return false;
 }
 
+export function assertNoMcpDirectTools(tools: readonly string[], context: string): void {
+	const offending = tools.find((tool) => tool.startsWith("mcp:"));
+	if (offending) {
+		throw new Error(`${context}: MCP direct tools are no longer supported ('${offending}'). Remove the 'mcp:' entry.`);
+	}
+}
+
 export interface BuiltinAgentOverrideBase {
 	model?: string;
 	fallbackModels?: string[];
@@ -45,7 +52,6 @@ export interface BuiltinAgentOverrideBase {
 	systemPrompt: string;
 	skills?: string[];
 	tools?: string[];
-	mcpDirectTools?: string[];
 	completionGuard?: boolean;
 }
 
@@ -61,6 +67,8 @@ interface BuiltinAgentOverrideConfig {
 	systemPrompt?: string;
 	skills?: string[] | false;
 	tools?: string[] | false;
+	toolsPrepend?: string[];
+	toolsAppend?: string[];
 	completionGuard?: boolean;
 }
 
@@ -76,7 +84,6 @@ export interface AgentConfig {
 	packageName?: string;
 	description: string;
 	tools?: string[];
-	mcpDirectTools?: string[];
 	model?: string;
 	fallbackModels?: string[];
 	thinking?: string;
@@ -155,30 +162,6 @@ function getUserChainDir(): string {
 	return path.join(getAgentDir(), "chains");
 }
 
-function splitToolList(rawTools: string[] | undefined): { tools?: string[]; mcpDirectTools?: string[] } {
-	const mcpDirectTools: string[] = [];
-	const tools: string[] = [];
-	for (const tool of rawTools ?? []) {
-		if (tool.startsWith("mcp:")) {
-			mcpDirectTools.push(tool.slice(4));
-		} else {
-			tools.push(tool);
-		}
-	}
-	return {
-		...(tools.length > 0 ? { tools } : {}),
-		...(mcpDirectTools.length > 0 ? { mcpDirectTools } : {}),
-	};
-}
-
-function joinToolList(config: Pick<AgentConfig, "tools" | "mcpDirectTools">): string[] | undefined {
-	const joined = [
-		...(config.tools ?? []),
-		...(config.mcpDirectTools ?? []).map((tool) => `mcp:${tool}`),
-	];
-	return joined.length > 0 ? joined : undefined;
-}
-
 function arraysEqual(a: string[] | undefined, b: string[] | undefined): boolean {
 	if (!a && !b) return true;
 	if (!a || !b) return false;
@@ -202,7 +185,6 @@ function cloneOverrideBase(agent: AgentConfig): BuiltinAgentOverrideBase {
 		systemPrompt: agent.systemPrompt,
 		skills: agent.skills ? [...agent.skills] : undefined,
 		tools: agent.tools ? [...agent.tools] : undefined,
-		mcpDirectTools: agent.mcpDirectTools ? [...agent.mcpDirectTools] : undefined,
 		completionGuard: agent.completionGuard,
 	};
 }
@@ -222,6 +204,8 @@ function cloneOverrideValue(override: BuiltinAgentOverrideConfig): BuiltinAgentO
 		...(override.systemPrompt !== undefined ? { systemPrompt: override.systemPrompt } : {}),
 		...(override.skills !== undefined ? { skills: override.skills === false ? false : [...override.skills] } : {}),
 		...(override.tools !== undefined ? { tools: override.tools === false ? false : [...override.tools] } : {}),
+		...(override.toolsPrepend !== undefined ? { toolsPrepend: [...override.toolsPrepend] } : {}),
+		...(override.toolsAppend !== undefined ? { toolsAppend: [...override.toolsAppend] } : {}),
 		...(override.completionGuard !== undefined ? { completionGuard: override.completionGuard } : {}),
 	};
 }
@@ -379,7 +363,25 @@ function parseBuiltinOverrideEntry(
 	if (skills !== undefined) override.skills = skills;
 
 	const tools = parseOverrideStringArrayOrFalse(input.tools, { filePath, name, field: "tools" });
+	if (Array.isArray(tools)) assertNoMcpDirectTools(tools, `Builtin override '${name}' in '${filePath}'`);
 	if (tools !== undefined) override.tools = tools;
+
+	const toolsPrepend = parseOverrideStringArrayOrFalse(input.toolsPrepend, { filePath, name, field: "toolsPrepend" });
+	if (toolsPrepend === false) {
+		throw new Error(`Builtin override '${name}' in '${filePath}' has invalid 'toolsPrepend'; expected an array of strings.`);
+	}
+	if (toolsPrepend !== undefined) {
+		assertNoMcpDirectTools(toolsPrepend, `Builtin override '${name}' in '${filePath}'`);
+		override.toolsPrepend = toolsPrepend;
+	}
+	const toolsAppend = parseOverrideStringArrayOrFalse(input.toolsAppend, { filePath, name, field: "toolsAppend" });
+	if (toolsAppend === false) {
+		throw new Error(`Builtin override '${name}' in '${filePath}' has invalid 'toolsAppend'; expected an array of strings.`);
+	}
+	if (toolsAppend !== undefined) {
+		assertNoMcpDirectTools(toolsAppend, `Builtin override '${name}' in '${filePath}'`);
+		override.toolsAppend = toolsAppend;
+	}
 
 	return Object.keys(override).length > 0 ? override : undefined;
 }
@@ -412,6 +414,21 @@ function readSubagentSettings(filePath: string | null): SubagentSettings {
 	return { overrides: parsed, disableBuiltins };
 }
 
+function composeOverrideTools(
+	effective: string[],
+	prepend: string[] | undefined,
+	append: string[] | undefined,
+): string[] | undefined {
+	const seen = new Set<string>();
+	const result: string[] = [];
+	for (const tool of [...(prepend ?? []), ...effective, ...(append ?? [])]) {
+		if (seen.has(tool)) continue;
+		seen.add(tool);
+		result.push(tool);
+	}
+	return result.length > 0 ? result : undefined;
+}
+
 function applyBuiltinOverride(
 	agent: AgentConfig,
 	override: BuiltinAgentOverrideConfig,
@@ -434,10 +451,13 @@ function applyBuiltinOverride(
 	if (override.disabled !== undefined) next.disabled = override.disabled;
 	if (override.systemPrompt !== undefined) next.systemPrompt = override.systemPrompt;
 	if (override.skills !== undefined) next.skills = override.skills === false ? undefined : [...override.skills];
-	if (override.tools !== undefined) {
-		const { tools, mcpDirectTools } = splitToolList(override.tools === false ? [] : override.tools);
-		next.tools = tools;
-		next.mcpDirectTools = mcpDirectTools;
+	if (override.tools !== undefined || override.toolsPrepend !== undefined || override.toolsAppend !== undefined) {
+		const effective = override.tools === false
+			? []
+			: override.tools !== undefined
+				? override.tools
+				: (agent.tools ?? []);
+		next.tools = composeOverrideTools(effective, override.toolsPrepend, override.toolsAppend);
 	}
 	if (override.completionGuard !== undefined) next.completionGuard = override.completionGuard;
 
@@ -538,12 +558,13 @@ function applyCustomAgentOverride(
 			override.skills === false ? undefined : [...override.skills],
 		);
 	}
-	if (override.tools !== undefined) {
-		const toolsUnset = agent.tools === undefined && agent.mcpDirectTools === undefined;
-		if (toolsUnset) {
-			const { tools, mcpDirectTools } = splitToolList(override.tools === false ? [] : override.tools);
-			next.tools = tools;
-			next.mcpDirectTools = mcpDirectTools;
+	if (override.tools !== undefined || override.toolsPrepend !== undefined || override.toolsAppend !== undefined) {
+		const replacementApplies = agent.tools === undefined && override.tools !== undefined;
+		const effective = replacementApplies
+			? (override.tools === false ? [] : override.tools as string[])
+			: (agent.tools ?? []);
+		if (replacementApplies || override.toolsPrepend !== undefined || override.toolsAppend !== undefined) {
+			next.tools = composeOverrideTools(effective, override.toolsPrepend, override.toolsAppend);
 			anyFilled = true;
 		}
 	}
@@ -578,7 +599,7 @@ function applyCustomAgentOverrides(
 
 export function buildBuiltinOverrideConfig(
 	base: BuiltinAgentOverrideBase,
-	draft: Pick<AgentConfig, "model" | "fallbackModels" | "thinking" | "systemPromptMode" | "inheritProjectContext" | "inheritSkills" | "defaultContext" | "disabled" | "systemPrompt" | "skills" | "tools" | "mcpDirectTools" | "completionGuard">,
+	draft: Pick<AgentConfig, "model" | "fallbackModels" | "thinking" | "systemPromptMode" | "inheritProjectContext" | "inheritSkills" | "defaultContext" | "disabled" | "systemPrompt" | "skills" | "tools" | "completionGuard">,
 ): BuiltinAgentOverrideConfig | undefined {
 	const override: BuiltinAgentOverrideConfig = {};
 
@@ -592,10 +613,7 @@ export function buildBuiltinOverrideConfig(
 	if (draft.disabled !== base.disabled) override.disabled = draft.disabled ?? false;
 	if (draft.systemPrompt !== base.systemPrompt) override.systemPrompt = draft.systemPrompt;
 	if (!arraysEqual(draft.skills, base.skills)) override.skills = draft.skills ? [...draft.skills] : false;
-
-	const baseTools = joinToolList(base);
-	const draftTools = joinToolList(draft);
-	if (!arraysEqual(draftTools, baseTools)) override.tools = draftTools ? [...draftTools] : false;
+	if (!arraysEqual(draft.tools, base.tools)) override.tools = draft.tools ? [...draft.tools] : false;
 	if ((draft.completionGuard !== false) !== (base.completionGuard !== false)) {
 		override.completionGuard = draft.completionGuard !== false;
 	}
@@ -710,22 +728,11 @@ function loadAgentsFromDir(dir: string, source: AgentSource): AgentConfig[] {
 		const packageName = parsedPackage.packageName;
 		const runtimeName = buildRuntimeName(localName, packageName);
 
-		const rawTools = frontmatter.tools
+		const tools = frontmatter.tools
 			?.split(",")
 			.map((t) => t.trim())
 			.filter(Boolean);
-
-		const mcpDirectTools: string[] = [];
-		const tools: string[] = [];
-		if (rawTools) {
-			for (const tool of rawTools) {
-				if (tool.startsWith("mcp:")) {
-					mcpDirectTools.push(tool.slice(4));
-				} else {
-					tools.push(tool);
-				}
-			}
-		}
+		if (tools) assertNoMcpDirectTools(tools, `Agent '${localName}' in '${filePath}'`);
 
 		const defaultReads = frontmatter.defaultReads
 			?.split(",")
@@ -787,8 +794,7 @@ function loadAgentsFromDir(dir: string, source: AgentSource): AgentConfig[] {
 			localName,
 			packageName,
 			description: frontmatter.description,
-			tools: tools.length > 0 ? tools : undefined,
-			mcpDirectTools: mcpDirectTools.length > 0 ? mcpDirectTools : undefined,
+			tools: tools && tools.length > 0 ? tools : undefined,
 			model: frontmatter.model,
 			fallbackModels: fallbackModels && fallbackModels.length > 0 ? fallbackModels : undefined,
 			thinking: frontmatter.thinking,

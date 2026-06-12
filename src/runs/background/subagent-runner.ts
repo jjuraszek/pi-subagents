@@ -662,7 +662,6 @@ async function runSingleStep(
 			extensions: step.extensions,
 			systemPrompt: step.systemPrompt,
 			systemPromptMode: step.systemPromptMode,
-			mcpDirectTools: step.mcpDirectTools,
 			cwd: step.cwd ?? ctx.cwd,
 			promptFileStem: step.agent,
 			intercomSessionName: ctx.childIntercomTarget,
@@ -708,7 +707,6 @@ async function runSingleStep(
 				task: taskForCompletionGuard,
 				messages: run.messages,
 				tools: step.tools,
-				mcpDirectTools: step.mcpDirectTools,
 			})
 			: undefined;
 		const completionGuardTriggered = completionGuard?.triggered === true && !run.observedMutationAttempt;

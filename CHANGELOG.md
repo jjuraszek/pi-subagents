@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- `subagents.agentOverrides.<name>.toolsPrepend` / `toolsAppend`: additive tool overrides for builtin and custom agents, composing `toolsPrepend + tools + toolsAppend` with first-occurrence dedupe.
+
+### Removed
+- MCP direct-tool compatibility (`mcp:` tool entries, `mcpDirectTools`, `MCP_DIRECT_TOOLS`, the direct-tool allowlist resolver). Stale `mcp:` entries now fail fast.
+
 ## [0.26.0-jj.2] - 2026-06-03
 
 Fork-only patch on top of upstream v0.26.0. See [AGENTS.md](AGENTS.md) for the fork/release model.

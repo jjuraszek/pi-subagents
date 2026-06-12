@@ -84,19 +84,19 @@ Those are ordinary Pi requests. Pi decides whether to call `subagent`, which age
 
 | Want | Ask naturally |
 |------|---------------|
-| Get a second opinion | “Ask oracle to review this plan and challenge assumptions.” |
-| Solve a hard problem | “Use oracle to investigate this bug before we edit.” |
-| Review a diff | “Use reviewer to review this diff.” |
-| Run parallel reviewers | “Run reviewers for correctness, tests, and cleanup.” |
-| Implement then review | “Implement this, then review it.” |
-| Review until clean | “Run a review loop on this change with a max of 3 rounds.” |
-| Execute a plan carefully | “Have worker implement this approved plan, then run reviewers and apply the feedback.” |
-| Scout before planning | “Use scout to inspect the auth flow before planning.” |
-| Run in the background | “Run this in the background.” |
-| Browse agents | “Show me the available subagents.” |
-| Use a saved workflow | “Run the review chain on this branch.” |
-| See running work | “Show active async runs.” |
-| Check setup | “Check whether subagents are configured correctly.” |
+| Get a second opinion | "Ask oracle to review this plan and challenge assumptions." |
+| Solve a hard problem | "Use oracle to investigate this bug before we edit." |
+| Review a diff | "Use reviewer to review this diff." |
+| Run parallel reviewers | "Run reviewers for correctness, tests, and cleanup." |
+| Implement then review | "Implement this, then review it." |
+| Review until clean | "Run a review loop on this change with a max of 3 rounds." |
+| Execute a plan carefully | "Have worker implement this approved plan, then run reviewers and apply the feedback." |
+| Scout before planning | "Use scout to inspect the auth flow before planning." |
+| Run in the background | "Run this in the background." |
+| Browse agents | "Show me the available subagents." |
+| Use a saved workflow | "Run the review chain on this branch." |
+| See running work | "Show active async runs." |
+| Check setup | "Check whether subagents are configured correctly." |
 
 The extension ships with builtin agents you can use immediately.
 
@@ -266,7 +266,7 @@ Both double and single quotes work. You can also use `--` as a delimiter:
 /chain scout -- scan code -> planner -- analyze auth
 ```
 
-Steps without a task inherit behavior from the execution mode. Chain steps get `{previous}`, the prior step’s output. Parallel steps use the first available task as a fallback.
+Steps without a task inherit behavior from the execution mode. Chain steps get `{previous}`, the prior step's output. Parallel steps use the first available task as a fallback.
 
 ```text
 /chain scout "analyze auth" -> planner -> worker
@@ -311,7 +311,7 @@ Add `--bg` to run in the background:
 /parallel scout "scan frontend" -> scout "scan backend" --bg
 ```
 
-Add `--fork` to start each child from a real branched session created from the parent’s current leaf:
+Add `--fork` to start each child from a real branched session created from the parent's current leaf:
 
 ```text
 /run reviewer "review this diff" --fork
@@ -365,12 +365,12 @@ Agent locations, lowest to highest priority:
 
 > **Fork note.** This fork (`jjuraszek/pi-subagents`) diverges from upstream here: discovery reads each root **flat** (top-level `*.md` only), the two user roots are ordered `~/.agents < <PI_CODING_AGENT_DIR>/agents`, and `SKILL.md` is never loaded as an agent. See [AGENTS.md](AGENTS.md).
 
-`<PI_CODING_AGENT_DIR>` defaults to `~/.pi/agent` when the env var is unset (see [`PI_CODING_AGENT_DIR`](#pi_coding_agent_dir)). Setting it relocates the pi profile root but does **not** sandbox discovery — `~/.agents` is always scanned as the lowest-priority user layer regardless.
+`<PI_CODING_AGENT_DIR>` defaults to `~/.pi/agent` when the env var is unset (see [`PI_CODING_AGENT_DIR`](#pi_coding_agent_dir)). Setting it relocates the pi profile root but does **not** sandbox discovery - `~/.agents` is always scanned as the lowest-priority user layer regardless.
 
 Discovery rules:
 
 - **Flat only.** Only top-level `*.md` files in each root are loaded. Subdirectories (`skills/`, `chains/`, or any nesting) are never scanned for personas.
-- **`SKILL.md` is excluded** by name — a skill manifest carries `name` + `description` frontmatter but is not an agent.
+- **`SKILL.md` is excluded** by name - a skill manifest carries `name` + `description` frontmatter but is not an agent.
 - **`.chain.md` / `.chain.json` files do not define agents.**
 - **Collisions resolve by priority:** a later root in the table above overrides an earlier one for the same parsed runtime agent name. Project beats user; `.pi/agents` beats `.agents`.
 
@@ -405,21 +405,27 @@ Example:
 }
 ```
 
-Supported override fields are `model`, `fallbackModels`, `thinking`, `systemPromptMode`, `inheritProjectContext`, `inheritSkills`, `defaultContext`, `disabled`, `skills`, `tools`, and `systemPrompt`. Use `defaultContext: false` in builtin overrides to clear an inherited context default. Project overrides beat user overrides.
+Supported override fields are `model`, `fallbackModels`, `thinking`, `systemPromptMode`, `inheritProjectContext`, `inheritSkills`, `defaultContext`, `disabled`, `skills`, `tools`, `toolsPrepend`, `toolsAppend`, and `systemPrompt`. Use `defaultContext: false` in builtin overrides to clear an inherited context default. Project overrides beat user overrides.
+
+`toolsPrepend` and `toolsAppend` add tools around the agent's effective `tools` list without requiring you to restate the full list. The resolved order is `toolsPrepend + tools + toolsAppend`, with first-occurrence dedupe. They apply to both builtin and custom agents. For custom agents they compose around the frontmatter `tools` value whether or not it is set. Only the winning override scope (project beats user) is applied -- additive fields do not layer across scopes.
+
+```json
+"agentOverrides": { "scout": { "toolsPrepend": ["some_extension_tool"] } }
+```
 
 Set `disabled: true` to hide a builtin from runtime discovery and agent-facing `subagent({ action: "list" })` output. For bulk control, set `subagents.disableBuiltins: true` in settings.
 
 ### Prompt assembly
 
-Subagents are designed to be narrow by default. Custom agents start with a clean system prompt and only the context you intentionally give them. They do not automatically inherit Pi’s whole base prompt, project instruction files, or discovered skills catalog.
+Subagents are designed to be narrow by default. Custom agents start with a clean system prompt and only the context you intentionally give them. They do not automatically inherit Pi's whole base prompt, project instruction files, or discovered skills catalog.
 
 Use these fields when an agent should see more:
 
 | Field | Effect |
 |-------|--------|
-| `systemPromptMode: append` | Append the agent prompt to Pi’s normal base prompt. |
+| `systemPromptMode: append` | Append the agent prompt to Pi's normal base prompt. |
 | `inheritProjectContext: true` | Keep inherited project instructions from files like `AGENTS.md` and `CLAUDE.md`. |
-| `inheritSkills: true` | Let the child see Pi’s discovered skills catalog. |
+| `inheritSkills: true` | Let the child see Pi's discovered skills catalog. |
 | `defaultContext: fork` | Use forked session context when a launch omits `context`; explicit `context: "fresh"` still wins. |
 
 Builtin agents opt into project instruction inheritance by default so they follow repo-specific rules out of the box. `delegate` also uses append mode because its job is orchestration inside the parent workflow.
@@ -434,7 +440,7 @@ name: scout
 # Optional: registers this as code-analysis.scout while preserving name: scout
 package: code-analysis
 description: Fast codebase recon
-tools: read, grep, find, ls, bash, mcp:chrome-devtools
+tools: read, grep, find, ls, bash
 extensions:
 model: claude-haiku-4-5
 fallbackModels: openai/gpt-5-mini, anthropic/claude-sonnet-4
@@ -459,14 +465,14 @@ Important fields:
 | Field | Notes |
 |-------|-------|
 | `package` | Optional package identifier. A file with `name: scout` and `package: code-analysis` registers as `code-analysis.scout`; serialization keeps `name` and `package` separate. |
-| `tools` | Builtin tool allowlist. `mcp:` entries select direct MCP tools when `pi-mcp-adapter` is installed. |
+| `tools` | Builtin tool allowlist for this agent. |
 | `extensions` | Omitted means normal extensions; empty means no extensions; comma-separated values allowlist specific extensions. |
 | `model` | Default model. Bare ids prefer the current provider when possible, then unique registry matches. |
 | `fallbackModels` | Ordered backup models for provider/model failures such as quota, auth, timeout, or unavailable model. Ordinary task failures do not trigger fallback. |
 | `thinking` | Appended as a `:level` suffix at runtime unless a suffix is already present. |
-| `systemPromptMode` | `replace` by default; `append` keeps Pi’s base prompt. |
+| `systemPromptMode` | `replace` by default; `append` keeps Pi's base prompt. |
 | `inheritProjectContext` | Keeps or strips inherited project instruction blocks. |
-| `inheritSkills` | Keeps or strips Pi’s discovered skills catalog. |
+| `inheritSkills` | Keeps or strips Pi's discovered skills catalog. |
 | `defaultContext` | Optional `fresh` or `fork` launch context default for this agent. |
 | `skills` | Injects specific skills directly, regardless of `inheritSkills`. |
 | `output` | Default single-agent output file. |
@@ -474,20 +480,17 @@ Important fields:
 | `defaultProgress` | Maintain `progress.md`. |
 | `completionGuard` | Set `false` only for non-implementation agents that may mention implementation words while using mutation-capable tools such as `bash`. |
 | `interactive` | Parsed for compatibility but not enforced in v1. |
-| `maxSubagentDepth` | Tightens nested delegation for this agent’s children. |
+| `maxSubagentDepth` | Tightens nested delegation for this agent's children. |
 
 ### Tool and extension selection
 
-If `tools` is omitted, `pi-subagents` does not pass `--tools`, so the child gets Pi’s normal builtin tools. If `tools` is present, regular tool names become an explicit allowlist. `mcp:` entries are split out and forwarded as direct MCP selections. Path-like `tools` entries, such as extension paths or `.ts`/`.js` files, are treated as tool-extension paths rather than builtin tool names. Agents that declare only known read-only builtin tools skip the implementation completion guard, but `bash`, unknown tools, and MCP tools stay mutation-capable. Use `completionGuard: false` for bash-enabled validators or advisors that should never be judged as implementation agents.
+If `tools` is omitted, `pi-subagents` does not pass `--tools`, so the child gets Pi's normal builtin tools. If `tools` is present, regular tool names become an explicit allowlist. Path-like `tools` entries, such as extension paths or `.ts`/`.js` files, are treated as tool-extension paths rather than builtin tool names. Agents that declare only known read-only builtin tools skip the implementation completion guard, but `bash` and unknown tools stay mutation-capable. Use `completionGuard: false` for bash-enabled validators or advisors that should never be judged as implementation agents.
 
 Examples:
 
 - `tools` omitted and `extensions` omitted: normal builtins and normal extensions.
-- `tools: mcp:chrome-devtools`: normal builtins plus direct Chrome DevTools MCP tools.
-- `tools: read, bash, mcp:chrome-devtools`: only `read` and `bash` as builtins, plus direct Chrome DevTools MCP tools.
+- `tools: read, bash`: only `read` and `bash` as builtins.
 - `tools: subagent, read`: a child-safe `subagent` tool is available inside that child so it can run explicitly assigned nested fanout.
-
-Direct MCP tools require [pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter). Subagents only receive direct MCP tools when `mcp:` entries are listed in their frontmatter; global `directTools: true` in `mcp.json` is not enough by itself. The generic `mcp` proxy tool can still be used for discovery when available. The adapter caches tool metadata at startup, so after connecting a new MCP server for the first time, restart Pi before relying on direct tools. An `mcp:` entry named `subagent` does not authorize nested fanout; only the builtin `subagent` tool name does.
 
 `extensions` controls child extension loading:
 
@@ -612,7 +615,7 @@ Parallel outputs are aggregated with clear separators before being passed to the
 
 ## Skills
 
-Skills are `SKILL.md` files injected into an agent’s system prompt.
+Skills are `SKILL.md` files injected into an agent's system prompt.
 
 Discovery uses project-first precedence:
 
@@ -764,7 +767,7 @@ Agent definitions are not loaded into context by default. Management actions let
   inheritSkills: false,
   model: "anthropic/claude-sonnet-4",
   fallbackModels: ["openai/gpt-5-mini", "anthropic/claude-haiku-4-5"],
-  tools: "read, bash, mcp:github/search_repositories",
+  tools: "read, bash",
   extensions: "",
   skills: "parallel-scout",
   thinking: "high",
@@ -935,7 +938,7 @@ Session directory precedence is: `params.sessionDir`, then `config.defaultSessio
 { "maxSubagentDepth": 1 }
 ```
 
-Controls nested delegation when no inherited `PI_SUBAGENT_MAX_DEPTH` is already in effect. Per-agent `maxSubagentDepth` can tighten the limit for that agent’s child runs, but cannot relax an inherited stricter limit. This applies even to children that explicitly declare `tools: subagent`; at the cap, execution fanout is blocked instead of silently hiding nested work.
+Controls nested delegation when no inherited `PI_SUBAGENT_MAX_DEPTH` is already in effect. Per-agent `maxSubagentDepth` can tighten the limit for that agent's child runs, but cannot relax an inherited stricter limit. This applies even to children that explicitly declare `tools: subagent`; at the cap, execution fanout is blocked instead of silently hiding nested work.
 
 ### `intercomBridge`
 
@@ -997,7 +1000,7 @@ Debug artifacts live under `{sessionDir}/subagent-artifacts/` or a user-scoped t
 
 Metadata records timing, usage, exit code, final model, attempted models, and fallback attempt outcomes.
 
-Session files are stored under a per-run session directory. With `context: "fork"`, each child starts with `--session <branched-session-file>` produced from the parent’s current leaf. That is a real session fork, not an injected summary.
+Session files are stored under a per-run session directory. With `context: "fork"`, each child starts with `--session <branched-session-file>` produced from the parent's current leaf. That is a real session fork, not an injected summary.
 
 Async completions notify only the originating session. The result watcher emits `subagent:async-complete`, and the extension consumes that event to render completion notifications.
 

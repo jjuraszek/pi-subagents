@@ -52,7 +52,7 @@ test("declared read-only builtin tools suppress implementation-word false positi
 	});
 });
 
-test("omitted, empty, bash, unknown, write, and MCP tool capabilities stay conservative", () => {
+test("omitted, empty, bash, unknown, and write tool capabilities stay conservative", () => {
 	const base = {
 		agent: "architect",
 		task: "Implement the approved source fix",
@@ -64,7 +64,6 @@ test("omitted, empty, bash, unknown, write, and MCP tool capabilities stay conse
 	assert.equal(evaluateCompletionMutationGuard({ ...base, tools: ["read", "bash", "ls"] }).triggered, true);
 	assert.equal(evaluateCompletionMutationGuard({ ...base, tools: ["read", "custom_lookup"] }).triggered, true);
 	assert.equal(evaluateCompletionMutationGuard({ ...base, tools: ["read", "write"] }).triggered, true);
-	assert.equal(evaluateCompletionMutationGuard({ ...base, tools: ["read", "grep"], mcpDirectTools: ["github/search"] }).triggered, true);
 });
 
 test("worker with mutating-capable tools still triggers when no mutation is observed", () => {

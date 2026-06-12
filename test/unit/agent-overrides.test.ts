@@ -243,6 +243,20 @@ describe("builtin agent overrides", () => {
 		assert.equal(fs.existsSync(settingsPath), false);
 	});
 
+	it("rejects custom agent frontmatter tools that contain mcp: entries", () => {
+		writeProjectAgent(
+			tempProject,
+			"worker",
+			`---\nname: worker\ndescription: Test worker\ntools: read, mcp:chrome-devtools\n---\n\nA worker.\n`,
+		);
+
+		assert.throws(
+			() => discoverAgents(tempProject, "both"),
+			(error: unknown) => error instanceof Error
+				&& /MCP direct tools are no longer supported/.test(error.message),
+		);
+	});
+
 	it("surfaces malformed settings files instead of silently ignoring them", () => {
 		const settingsPath = path.join(tempHome, ".pi", "agent", "settings.json");
 		fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
@@ -323,7 +337,6 @@ describe("builtin agent overrides", () => {
 				systemPrompt: "Base prompt",
 				skills: ["safe-bash"],
 				tools: ["bash"],
-				mcpDirectTools: ["xcodebuild_list_sims"],
 				completionGuard: false,
 			},
 			{
@@ -337,7 +350,6 @@ describe("builtin agent overrides", () => {
 				systemPrompt: "Base prompt",
 				skills: undefined,
 				tools: undefined,
-				mcpDirectTools: undefined,
 				completionGuard: true,
 			},
 		);
@@ -353,5 +365,193 @@ describe("builtin agent overrides", () => {
 			tools: false,
 			completionGuard: true,
 		});
+	});
+
+	// reviewer builtin has tools: read, grep, find, ls, bash, edit, write, intercom
+	it("toolsPrepend on builtin: prepended tool leads, base tools preserved", () => {
+		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
+			subagents: { agentOverrides: { reviewer: { toolsPrepend: ["custom-tool"] } } },
+		});
+
+		const reviewer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "reviewer");
+		assert.ok(reviewer);
+		assert.ok(reviewer.tools);
+		assert.equal(reviewer.tools[0], "custom-tool");
+		assert.ok(reviewer.tools.includes("read"));
+		assert.ok(reviewer.tools.includes("bash"));
+	});
+
+	it("toolsAppend on builtin: appended tool trails, base tools preserved", () => {
+		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
+			subagents: { agentOverrides: { reviewer: { toolsAppend: ["custom-tool"] } } },
+		});
+
+		const reviewer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "reviewer");
+		assert.ok(reviewer);
+		assert.ok(reviewer.tools);
+		assert.equal(reviewer.tools[reviewer.tools.length - 1], "custom-tool");
+		assert.ok(reviewer.tools.includes("read"));
+		assert.ok(reviewer.tools.includes("bash"));
+	});
+
+	it("toolsPrepend + tools array compose as prepend + replacement", () => {
+		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
+			subagents: { agentOverrides: { reviewer: { toolsPrepend: ["pre-tool"], tools: ["base-tool"] } } },
+		});
+
+		const reviewer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "reviewer");
+		assert.ok(reviewer);
+		assert.deepEqual(reviewer.tools, ["pre-tool", "base-tool"]);
+	});
+
+	it("toolsAppend + tools array compose as replacement + append", () => {
+		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
+			subagents: { agentOverrides: { reviewer: { toolsAppend: ["post-tool"], tools: ["base-tool"] } } },
+		});
+
+		const reviewer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "reviewer");
+		assert.ok(reviewer);
+		assert.deepEqual(reviewer.tools, ["base-tool", "post-tool"]);
+	});
+
+	it("toolsPrepend + tools false compose as prepend + cleared base", () => {
+		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
+			subagents: { agentOverrides: { reviewer: { toolsPrepend: ["pre-tool"], tools: false } } },
+		});
+
+		const reviewer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "reviewer");
+		assert.ok(reviewer);
+		assert.deepEqual(reviewer.tools, ["pre-tool"]);
+	});
+
+	it("toolsAppend + tools false compose as cleared base + append only", () => {
+		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
+			subagents: { agentOverrides: { reviewer: { toolsAppend: ["post-tool"], tools: false } } },
+		});
+
+		const reviewer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "reviewer");
+		assert.ok(reviewer);
+		assert.deepEqual(reviewer.tools, ["post-tool"]);
+	});
+
+	it("dedupe: prepending an already-present base tool moves it to front, no duplicate", () => {
+		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
+			subagents: { agentOverrides: { reviewer: { toolsPrepend: ["bash"] } } },
+		});
+
+		const reviewer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "reviewer");
+		assert.ok(reviewer);
+		assert.ok(reviewer.tools);
+		assert.equal(reviewer.tools[0], "bash");
+		const bashCount = reviewer.tools.filter((t) => t === "bash").length;
+		assert.equal(bashCount, 1);
+	});
+
+	it("toolsPrepend/toolsAppend on custom agent compose around frontmatter tools", () => {
+		fs.mkdirSync(path.join(tempProject, ".pi"), { recursive: true });
+		writeJson(path.join(tempProject, ".pi", "settings.json"), {
+			subagents: { agentOverrides: { implementer: { toolsPrepend: ["pre-tool"], toolsAppend: ["post-tool"] } } },
+		});
+		writeProjectAgent(
+			tempProject,
+			"implementer",
+			`---\nname: implementer\ndescription: TDD implementer\ntools: bash, read\n---\n\nDrive the failing test first.\n`,
+		);
+
+		const implementer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "implementer");
+		assert.ok(implementer);
+		assert.deepEqual(implementer.tools, ["pre-tool", "bash", "read", "post-tool"]);
+	});
+
+	it("custom agent: override tools applied when frontmatter tools is unset", () => {
+		fs.mkdirSync(path.join(tempProject, ".pi"), { recursive: true });
+		writeJson(path.join(tempProject, ".pi", "settings.json"), {
+			subagents: { agentOverrides: { implementer: { tools: ["read", "grep"] } } },
+		});
+		writeProjectAgent(
+			tempProject,
+			"implementer",
+			`---\nname: implementer\ndescription: TDD implementer\n---\n\nDrive the failing test first.\n`,
+		);
+
+		const implementer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "implementer");
+		assert.ok(implementer);
+		// frontmatter has no tools -> override tools applies
+		assert.deepEqual(implementer.tools, ["read", "grep"]);
+	});
+
+	it("custom agent: frontmatter tools wins over override tools, but toolsPrepend/toolsAppend still compose", () => {
+		fs.mkdirSync(path.join(tempProject, ".pi"), { recursive: true });
+		writeJson(path.join(tempProject, ".pi", "settings.json"), {
+			subagents: { agentOverrides: { implementer: { tools: ["replaced"], toolsPrepend: ["pre-tool"], toolsAppend: ["post-tool"] } } },
+		});
+		writeProjectAgent(
+			tempProject,
+			"implementer",
+			`---\nname: implementer\ndescription: TDD implementer\ntools: bash, read\n---\n\nDrive the failing test first.\n`,
+		);
+
+		const implementer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "implementer");
+		assert.ok(implementer);
+		// override.tools ignored (frontmatter has tools), but prepend/append compose
+		assert.deepEqual(implementer.tools, ["pre-tool", "bash", "read", "post-tool"]);
+	});
+
+	it("toolsPrepend/toolsAppend: project override wins, user toolsPrepend not applied", () => {
+		fs.mkdirSync(path.join(tempProject, ".pi"), { recursive: true });
+		writeJson(path.join(tempHome, ".pi", "agent", "settings.json"), {
+			subagents: { agentOverrides: { reviewer: { toolsPrepend: ["u-tool"] } } },
+		});
+		writeJson(path.join(tempProject, ".pi", "settings.json"), {
+			subagents: { agentOverrides: { reviewer: { toolsAppend: ["p-tool"] } } },
+		});
+
+		const reviewer = discoverAgents(tempProject, "both").agents.find((a) => a.name === "reviewer");
+		assert.ok(reviewer);
+		assert.ok(reviewer.tools);
+		assert.ok(reviewer.tools.includes("p-tool"), "project toolsAppend should apply");
+		assert.ok(!reviewer.tools.includes("u-tool"), "user toolsPrepend should NOT apply when project override wins");
+		assert.equal(reviewer.override?.scope, "project");
+	});
+
+	it("malformed toolsPrepend (non-array) throws field-specific override error", () => {
+		const settingsPath = path.join(tempHome, ".pi", "agent", "settings.json");
+		writeJson(settingsPath, {
+			subagents: { agentOverrides: { reviewer: { toolsPrepend: "x" } } },
+		});
+
+		assert.throws(
+			() => discoverAgents(tempProject, "both"),
+			(error: unknown) => error instanceof Error
+				&& error.message.includes("toolsPrepend")
+				&& error.message.includes("reviewer"),
+		);
+	});
+
+	it("malformed toolsAppend (non-array) throws field-specific override error", () => {
+		const settingsPath = path.join(tempHome, ".pi", "agent", "settings.json");
+		writeJson(settingsPath, {
+			subagents: { agentOverrides: { reviewer: { toolsAppend: "x" } } },
+		});
+
+		assert.throws(
+			() => discoverAgents(tempProject, "both"),
+			(error: unknown) => error instanceof Error
+				&& error.message.includes("toolsAppend")
+				&& error.message.includes("reviewer"),
+		);
+	});
+
+	it("toolsAppend with mcp: entry throws MCP direct tools error", () => {
+		const settingsPath = path.join(tempHome, ".pi", "agent", "settings.json");
+		writeJson(settingsPath, {
+			subagents: { agentOverrides: { reviewer: { toolsAppend: ["mcp:foo"] } } },
+		});
+
+		assert.throws(
+			() => discoverAgents(tempProject, "both"),
+			(error: unknown) => error instanceof Error
+				&& /MCP direct tools are no longer supported/.test(error.message),
+		);
 	});
 });

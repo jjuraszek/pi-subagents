@@ -236,6 +236,30 @@ Inspect
 		assert.match(readText(listed), /Invalid JSON chain/);
 	});
 
+	it("rejects mcp: entries in tools config", () => {
+		const ctx = { cwd: tempDir, modelRegistry: { getAvailable: () => [] } };
+		assert.throws(
+			() => handleCreate(
+				{ config: { name: "test-mcp", description: "Test", scope: "project", tools: "read, mcp:foo" } },
+				ctx,
+			),
+			/MCP direct tools are no longer supported/,
+		);
+		// Create a valid agent first so update has something to find
+		const created = handleCreate(
+			{ config: { name: "test-mcp-valid", description: "Test", scope: "project", tools: "read" } },
+			ctx,
+		);
+		assert.equal(created.isError, false);
+		assert.throws(
+			() => handleUpdate(
+				{ agent: "test-mcp-valid", config: { tools: "mcp:bar" } },
+				ctx,
+			),
+			/MCP direct tools are no longer supported/,
+		);
+	});
+
 	it("creates delegate with its builtin prompt defaults", () => {
 		const result = handleCreate(
 			{ config: { name: "delegate", description: "Delegate helper", scope: "project" } },

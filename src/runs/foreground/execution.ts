@@ -165,7 +165,6 @@ async function runSingleAttempt(
 		tools: agent.tools,
 		extensions: agent.extensions,
 		systemPrompt: shared.systemPrompt,
-		mcpDirectTools: agent.mcpDirectTools,
 		cwd: options.cwd ?? runtimeCwd,
 		promptFileStem: agent.name,
 		intercomSessionName: options.intercomSessionName,
@@ -717,7 +716,6 @@ async function runSingleAttempt(
 			task: shared.originalTask ?? task,
 			messages: result.messages,
 			tools: agent.tools,
-			mcpDirectTools: agent.mcpDirectTools,
 		})
 		: undefined;
 	if (completionGuard?.triggered && !observedMutationAttempt) {

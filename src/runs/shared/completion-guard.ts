@@ -71,7 +71,6 @@ interface CompletionMutationGuardInput {
 	task: string;
 	messages: Message[];
 	tools?: string[];
-	mcpDirectTools?: string[];
 }
 
 interface CompletionMutationGuardResult {
@@ -96,10 +95,9 @@ function stripScopedNoEditConstraints(task: string): string {
 	return stripped;
 }
 
-function declaresOnlyReadOnlyTools(tools: string[] | undefined, mcpDirectTools: string[] | undefined): boolean {
+function declaresOnlyReadOnlyTools(tools: string[] | undefined): boolean {
 	return tools !== undefined
 		&& tools.length > 0
-		&& (mcpDirectTools?.length ?? 0) === 0
 		&& tools.every((tool) => READ_ONLY_BUILTIN_TOOLS.has(tool));
 }
 
@@ -135,7 +133,7 @@ export function hasMutationToolCall(messages: Message[]): boolean {
 }
 
 export function evaluateCompletionMutationGuard(input: CompletionMutationGuardInput): CompletionMutationGuardResult {
-	const expectedMutation = declaresOnlyReadOnlyTools(input.tools, input.mcpDirectTools)
+	const expectedMutation = declaresOnlyReadOnlyTools(input.tools)
 		? false
 		: expectsImplementationMutation(input.agent, input.task);
 	const attemptedMutation = hasMutationToolCall(input.messages);

@@ -15,6 +15,7 @@ import {
 	buildRuntimeName,
 	frontmatterNameForConfig,
 	parsePackageName,
+	assertNoMcpDirectTools,
 } from "./agents.ts";
 import { serializeAgent } from "./agent-serializer.ts";
 import { serializeChain, serializeJsonChain } from "./chain-serializer.ts";
@@ -217,16 +218,10 @@ function parseStepList(raw: unknown): { steps?: ChainStepConfig[]; error?: strin
 	return { steps };
 }
 
-function parseTools(raw: string): { tools?: string[]; mcpDirectTools?: string[] } {
-	const tools: string[] = [];
-	const mcpDirectTools: string[] = [];
-	for (const item of parseCsv(raw)) {
-		if (item.startsWith("mcp:")) {
-			const direct = item.slice(4).trim();
-			if (direct) mcpDirectTools.push(direct);
-		} else tools.push(item);
-	}
-	return { tools: tools.length ? tools : undefined, mcpDirectTools: mcpDirectTools.length ? mcpDirectTools : undefined };
+function parseTools(raw: string): { tools?: string[] } {
+	const tools = parseCsv(raw);
+	assertNoMcpDirectTools(tools, "config.tools");
+	return { tools: tools.length ? tools : undefined };
 }
 
 function applyAgentConfig(target: AgentConfig, cfg: Record<string, unknown>): string | undefined {
@@ -254,8 +249,8 @@ function applyAgentConfig(target: AgentConfig, cfg: Record<string, unknown>): st
 		} else return "config.fallbackModels must be a comma-separated string, string array, or false when provided.";
 	}
 	if (hasKey(cfg, "tools")) {
-		if (cfg.tools === false || cfg.tools === "") { target.tools = undefined; target.mcpDirectTools = undefined; }
-		else if (typeof cfg.tools === "string") { const parsed = parseTools(cfg.tools); target.tools = parsed.tools; target.mcpDirectTools = parsed.mcpDirectTools; }
+		if (cfg.tools === false || cfg.tools === "") { target.tools = undefined; }
+		else if (typeof cfg.tools === "string") { target.tools = parseTools(cfg.tools).tools; }
 		else return "config.tools must be a comma-separated string or false when provided.";
 	}
 	if (hasKey(cfg, "skills")) {
@@ -365,7 +360,7 @@ function renamePath(
 }
 
 function formatAgentDetail(agent: AgentConfig): string {
-	const tools = [...(agent.tools ?? []), ...(agent.mcpDirectTools ?? []).map((t) => `mcp:${t}`)];
+	const tools = agent.tools ?? [];
 	const lines: string[] = [`Agent: ${agent.name} (${agent.source})`, `Path: ${agent.filePath}`, `Description: ${agent.description}`];
 	if (agent.packageName) {
 		lines.push(`Local name: ${frontmatterNameForConfig(agent)}`);
