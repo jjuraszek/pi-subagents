@@ -1,5 +1,5 @@
 ---
-description: Parallel research/context builders into an implementation handoff plan
+description: Parallel context builders into an implementation handoff plan
 ---
 
 Use parallel subagents to understand the request, compare any external references, inspect the local codebase, and produce a grounded implementation handoff plan with a final implementation-ready meta-prompt.
@@ -13,9 +13,9 @@ Use `context: "fresh"` unless I explicitly ask for forked context. First read or
 Use the `subagent` tool in chain mode:
 
 1. First step: a parallel group.
-   - `researcher`, when the request includes external references, APIs, libraries, docs, current best practices, or prompt-guidance research.
+   - `context-builder` for an external-reference pass, when the request links a URL/issue/PR/doc/repo to study; it reads those referenced sources with the `fetch` tool.
    - `context-builder` for local codebase context.
-   - Add a second `context-builder` only when the scope is large enough to benefit from a separate implementation-strategy pass.
+   - Add an implementation-strategy `context-builder` only when the scope is large enough to benefit from a separate strategy pass.
 
 2. Second step: a synthesis `context-builder` that reads the parallel findings and writes the final handoff plan and meta-prompt.
 
@@ -31,10 +31,10 @@ Do not write these artifacts into the repository unless I explicitly ask for per
 
 Role guidance:
 
-External reference researcher:
-- Study linked projects, docs, issues, examples, source code, or prompt guidance.
+External-reference context-builder:
+- Study the linked projects, docs, issues, examples, or source code named in the request.
 - Identify the behavior, API, implementation files, constraints, and transferable ideas.
-- Conduct web research if needed. Use `web_search` if it is available; otherwise use whatever equivalent research capability is available.
+- Read referenced URLs/sources with the `fetch` tool. This reads sources you were given; it does not perform open-web discovery.
 - Return source links, repo paths, key evidence, risks, and what matters for this implementation.
 
 Local context-builder:

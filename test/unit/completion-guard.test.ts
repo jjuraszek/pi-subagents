@@ -149,3 +149,24 @@ test("implementation task with mutation attempts does not trigger", () => {
 
 	assert.equal(result.triggered, false);
 });
+
+test("fetch counts as a read-only builtin tool; web tools no longer do", () => {
+	assert.equal(
+		evaluateCompletionMutationGuard({
+			agent: "worker",
+			task: "Implement the feature",
+			tools: ["fetch"],
+			messages: [],
+		}).expectedMutation,
+		false,
+	);
+	assert.equal(
+		evaluateCompletionMutationGuard({
+			agent: "worker",
+			task: "Implement the feature",
+			tools: ["web_search"],
+			messages: [],
+		}).expectedMutation,
+		true,
+	);
+});

@@ -60,10 +60,10 @@ describe("foreground tool-call compaction", () => {
 		);
 	});
 
-	it("formats fetch_content urls clearly", () => {
+	it("formats fetch url clearly", () => {
 		assert.equal(
 			extractToolArgsPreview({
-				urls: ["https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging", "https://example.com/backup"],
+				url: "https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging",
 			}),
 			"https://developer.chrome.com/docs/extensions/develop/conc...",
 		);

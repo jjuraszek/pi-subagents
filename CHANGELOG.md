@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Removed
+- `researcher` builtin agent and the `/parallel-research` prompt command.
+- All `pi-web-access` references (`web_search`, `fetch_content`, `get_search_content`).
+
+### Changed
+- `context-builder` now reads referenced URLs with the `fetch` tool from `pi-essentials` (no open-web search). It degrades to local-only context when `pi-essentials` is absent.
+
 ## [0.27.0] - 2026-06-12
 
 First standalone release. This repo no longer tracks upstream `nicobailon/pi-subagents`; versioning is plain semver. See [AGENTS.md](AGENTS.md) for the release model.
