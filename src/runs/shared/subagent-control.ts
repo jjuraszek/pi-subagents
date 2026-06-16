@@ -15,6 +15,7 @@ export const DEFAULT_CONTROL_CONFIG: ResolvedControlConfig = {
 	enabled: true,
 	needsAttentionAfterMs: 60_000,
 	activeNoticeAfterMs: 240_000,
+	inFlightSilenceCeilingMs: 600_000,
 	failedToolAttemptsBeforeAttention: 3,
 	notifyOn: DEFAULT_NOTIFY_ON,
 	notifyChannels: CONTROL_NOTIFICATION_CHANNELS,
@@ -45,6 +46,9 @@ export function resolveControlConfig(
 	const activeNoticeAfterMs = parsePositiveInt(override?.activeNoticeAfterMs)
 		?? parsePositiveInt(globalConfig?.activeNoticeAfterMs)
 		?? DEFAULT_CONTROL_CONFIG.activeNoticeAfterMs;
+	const inFlightSilenceCeilingMs = parsePositiveInt(override?.inFlightSilenceCeilingMs)
+		?? parsePositiveInt(globalConfig?.inFlightSilenceCeilingMs)
+		?? DEFAULT_CONTROL_CONFIG.inFlightSilenceCeilingMs;
 	const activeNoticeAfterTurns = parsePositiveInt(override?.activeNoticeAfterTurns)
 		?? parsePositiveInt(globalConfig?.activeNoticeAfterTurns);
 	const activeNoticeAfterTokens = parsePositiveInt(override?.activeNoticeAfterTokens)
@@ -62,6 +66,7 @@ export function resolveControlConfig(
 		enabled,
 		needsAttentionAfterMs,
 		activeNoticeAfterMs,
+		inFlightSilenceCeilingMs,
 		activeNoticeAfterTurns,
 		activeNoticeAfterTokens,
 		failedToolAttemptsBeforeAttention,
@@ -70,17 +75,52 @@ export function resolveControlConfig(
 	};
 }
 
+export interface TurnLifecycleState {
+	turnOpen?: boolean;
+	lastProductiveSignalAt?: number;
+}
+
+export function applyChildEventToLifecycle(
+	state: TurnLifecycleState,
+	event: { type?: string; hasToolCall?: boolean },
+	now: number,
+): TurnLifecycleState {
+	switch (event.type) {
+		case "turn_start":
+		case "message_start":
+			return { turnOpen: true, lastProductiveSignalAt: state.lastProductiveSignalAt };
+		case "message_update":
+		case "tool_execution_start":
+		case "tool_execution_end":
+		case "tool_result_end":
+			return { turnOpen: state.turnOpen, lastProductiveSignalAt: now };
+		case "message_end":
+			return { turnOpen: event.hasToolCall ? state.turnOpen : false, lastProductiveSignalAt: now };
+		case "turn_end":
+			return { turnOpen: false, lastProductiveSignalAt: now };
+		default:
+			return state;
+	}
+}
+
 export function deriveActivityState(input: {
 	config: ResolvedControlConfig;
 	startedAt: number;
 	lastActivityAt?: number;
 	now?: number;
+	inFlightTurn?: boolean;
+	lastProductiveSignalAt?: number;
 }): ActivityState | undefined {
 	if (!input.config.enabled) return undefined;
 	const now = input.now ?? Date.now();
 	const lastActivity = input.lastActivityAt ?? input.startedAt;
 	const ageMs = Math.max(0, now - lastActivity);
-	return ageMs > input.config.needsAttentionAfterMs ? "needs_attention" : undefined;
+	if (ageMs <= input.config.needsAttentionAfterMs) return undefined;
+	if (input.inFlightTurn) {
+		const silenceMs = Math.max(0, now - (input.lastProductiveSignalAt ?? input.startedAt));
+		return silenceMs > input.config.inFlightSilenceCeilingMs ? "needs_attention" : "active_long_running";
+	}
+	return "needs_attention";
 }
 
 export function buildControlEvent(input: {

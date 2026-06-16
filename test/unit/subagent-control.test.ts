@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	applyChildEventToLifecycle,
 	buildControlEvent,
 	claimControlNotification,
 	controlNotificationKey,
@@ -238,5 +239,79 @@ describe("subagent control attention state", () => {
 			reason: "completion_guard",
 		});
 		assert.equal(claimControlNotification(resolveControlConfig(), terminalEvent, seen, "subagent-worker-run-1-1"), true);
+	});
+});
+
+const ceilingConfig = resolveControlConfig(undefined, {
+	needsAttentionAfterMs: 300,
+	inFlightSilenceCeilingMs: 1_000,
+});
+
+describe("in-flight turn activity state", () => {
+	it("defaults inFlightSilenceCeilingMs to 600000 and parses overrides", () => {
+		assert.equal(resolveControlConfig(undefined, undefined).inFlightSilenceCeilingMs, 600_000);
+		assert.equal(resolveControlConfig(undefined, { inFlightSilenceCeilingMs: 1_000 }).inFlightSilenceCeilingMs, 1_000);
+		assert.equal(resolveControlConfig(undefined, { inFlightSilenceCeilingMs: 0 }).inFlightSilenceCeilingMs, 600_000);
+	});
+
+	it("downgrades a silent in-flight turn under the ceiling to active_long_running", () => {
+		assert.equal(deriveActivityState({
+			config: ceilingConfig, startedAt: 0, lastActivityAt: 0, now: 400,
+			inFlightTurn: true, lastProductiveSignalAt: 0,
+		}), "active_long_running");
+	});
+
+	it("escalates a silent in-flight turn past the ceiling to needs_attention", () => {
+		assert.equal(deriveActivityState({
+			config: ceilingConfig, startedAt: 0, lastActivityAt: 0, now: 1_200,
+			inFlightTurn: true, lastProductiveSignalAt: 0,
+		}), "needs_attention");
+	});
+
+	it("keeps a streaming turn calm: a recent productive signal resets the silence clock", () => {
+		assert.equal(deriveActivityState({
+			config: ceilingConfig, startedAt: 0, lastActivityAt: 1_150, now: 1_200,
+			inFlightTurn: true, lastProductiveSignalAt: 1_150,
+		}), undefined);
+	});
+
+	it("flags genuine idle (no turn open) as needs_attention", () => {
+		assert.equal(deriveActivityState({
+			config: ceilingConfig, startedAt: 0, lastActivityAt: 0, now: 400,
+			inFlightTurn: false,
+		}), "needs_attention");
+	});
+
+	it("is backward compatible when in-flight inputs are omitted", () => {
+		assert.equal(deriveActivityState({ config: ceilingConfig, startedAt: 0, lastActivityAt: 0, now: 400 }), "needs_attention");
+	});
+
+	it("reduces child events into turn-lifecycle state", () => {
+		const opened = applyChildEventToLifecycle({ turnOpen: false }, { type: "message_start" }, 100);
+		assert.equal(opened.turnOpen, true);
+		assert.equal(opened.lastProductiveSignalAt, undefined);
+
+		const streamed = applyChildEventToLifecycle(opened, { type: "message_update" }, 200);
+		assert.equal(streamed.turnOpen, true);
+		assert.equal(streamed.lastProductiveSignalAt, 200);
+
+		const intermediate = applyChildEventToLifecycle(streamed, { type: "message_end", hasToolCall: true }, 300);
+		assert.equal(intermediate.turnOpen, true, "tool-call message_end must not close the turn");
+		assert.equal(intermediate.lastProductiveSignalAt, 300);
+
+		const closed = applyChildEventToLifecycle(intermediate, { type: "message_end", hasToolCall: false }, 400);
+		assert.equal(closed.turnOpen, false);
+
+		const turnEnded = applyChildEventToLifecycle({ turnOpen: true }, { type: "turn_end" }, 500);
+		assert.equal(turnEnded.turnOpen, false);
+		assert.equal(turnEnded.lastProductiveSignalAt, 500);
+	});
+
+	it("composes the way the background watchdog does (in-flight step stays calm)", () => {
+		const state = applyChildEventToLifecycle({ turnOpen: false, lastProductiveSignalAt: 0 }, { type: "message_start" }, 0);
+		assert.equal(deriveActivityState({
+			config: ceilingConfig, startedAt: 0, lastActivityAt: 0, now: 400,
+			inFlightTurn: state.turnOpen, lastProductiveSignalAt: state.lastProductiveSignalAt,
+		}), "active_long_running");
 	});
 });
