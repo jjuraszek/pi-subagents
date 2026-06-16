@@ -250,7 +250,14 @@ behavioral delta: during a silent in-flight window under the ceiling,
 - **Unit (config)** - `resolveControlConfig` applies the default 600_000 and a
   per-call `inFlightSilenceCeilingMs` override; `ControlOverrides` schema accepts
   the field.
-- **Integration (both paths)** - drive the watchdog with small per-call overrides
+- **Integration** - foreground is covered end-to-end (below). The background
+  runner's wiring is covered by the lifecycle/composition unit test plus the
+  existing async/parallel/status regression suites, **not** a dedicated
+  end-to-end background assertion: `updateRunnerActivityState` is a private
+  closure inside the detached runner and a time-based spawn assertion is flaky.
+  The reducer + `deriveActivityState` are path-agnostic, so the unit coverage
+  exercises the identical logic both paths invoke. Foreground end-to-end:
+  drive the watchdog with small per-call overrides
   (`control: { needsAttentionAfterMs: 100, inFlightSilenceCeilingMs: 500 }`) to
   avoid real-time waits: a child that emits `message_start` then stays silent
   past `needsAttentionAfterMs` but under the ceiling yields `active_long_running`
