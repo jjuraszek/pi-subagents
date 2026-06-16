@@ -27,6 +27,7 @@ import {
 } from "../../shared/types.ts";
 import {
 	DEFAULT_CONTROL_CONFIG,
+	applyChildEventToLifecycle,
 	buildControlEvent,
 	deriveActivityState,
 	claimControlNotification,
@@ -178,6 +179,8 @@ function resetStepLiveDetail(step: RunnerStatusStep): void {
 	step.currentPath = undefined;
 	step.recentTools = [];
 	step.recentOutput = [];
+	step.turnOpen = false;
+	step.lastProductiveSignalAt = undefined;
 }
 
 interface ChildEventContext {
@@ -827,6 +830,8 @@ async function runSingleStep(
 
 type RunnerStatusStep = NonNullable<AsyncStatus["steps"]>[number] & {
 	exitCode?: number | null;
+	turnOpen?: boolean;
+	lastProductiveSignalAt?: number;
 };
 
 type RunnerStatusPayload = Omit<AsyncStatus, "steps" | "parallelGroups" | "pid" | "cwd" | "currentStep" | "chainStepCount" | "lastUpdate"> & {
@@ -1291,6 +1296,17 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 			statusPayload.turnCount = Math.max(statusPayload.turnCount ?? 0, step.turnCount);
 		}
 		syncTopLevelCurrentTool();
+		const lifecycle = applyChildEventToLifecycle(
+			{ turnOpen: step.turnOpen, lastProductiveSignalAt: step.lastProductiveSignalAt },
+			{
+				type: event.type,
+				hasToolCall: event.type === "message_end" && Array.isArray(event.message?.content)
+					&& event.message.content.some((part) => (part as { type?: string }).type === "toolCall"),
+			},
+			now,
+		);
+		step.turnOpen = lifecycle.turnOpen;
+		step.lastProductiveSignalAt = lifecycle.lastProductiveSignalAt;
 		step.lastActivityAt = now;
 		statusPayload.lastActivityAt = now;
 		statusPayload.lastUpdate = now;
@@ -1315,6 +1331,8 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				startedAt: step.startedAt ?? overallStartTime,
 				lastActivityAt,
 				now,
+				inFlightTurn: step.turnOpen,
+				lastProductiveSignalAt: step.lastProductiveSignalAt,
 			});
 			if (idleState === "needs_attention") {
 				const previous = step.activityState;

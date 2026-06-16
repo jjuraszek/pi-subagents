@@ -28,6 +28,7 @@ import {
 } from "../../shared/types.ts";
 import {
 	DEFAULT_CONTROL_CONFIG,
+	applyChildEventToLifecycle,
 	buildControlEvent,
 	claimControlNotification,
 	deriveActivityState,
@@ -223,6 +224,8 @@ async function runSingleAttempt(
 		tokens: 0,
 		durationMs: 0,
 		lastActivityAt: startTime,
+		turnOpen: false,
+		lastProductiveSignalAt: startTime,
 	};
 	result.progress = progress;
 	const spawnEnv = { ...process.env, ...sharedEnv, ...getSubagentDepthEnv(options.maxSubagentDepth) };
@@ -394,6 +397,8 @@ async function runSingleAttempt(
 				startedAt: startTime,
 				lastActivityAt: progress.lastActivityAt,
 				now,
+				inFlightTurn: progress.turnOpen,
+				lastProductiveSignalAt: progress.lastProductiveSignalAt,
 			});
 			if (idleState === "needs_attention") {
 				return progress.activityState === "needs_attention" ? false : emitNeedsAttention(now);
@@ -444,6 +449,17 @@ async function runSingleAttempt(
 			const now = Date.now();
 			progress.durationMs = now - startTime;
 			progress.lastActivityAt = now;
+			const lifecycle = applyChildEventToLifecycle(
+				{ turnOpen: progress.turnOpen, lastProductiveSignalAt: progress.lastProductiveSignalAt },
+				{
+					type: evt.type,
+					hasToolCall: evt.type === "message_end" && Array.isArray(evt.message?.content)
+						&& evt.message.content.some((part) => (part as { type?: string }).type === "toolCall"),
+				},
+				now,
+			);
+			progress.turnOpen = lifecycle.turnOpen;
+			progress.lastProductiveSignalAt = lifecycle.lastProductiveSignalAt;
 			updateActivityState(now);
 
 			if (evt.type === "tool_execution_start") {

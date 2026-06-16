@@ -152,6 +152,10 @@ export async function tryImport<T>(specifier: string): Promise<T | null> {
 }
 
 export const events = {
+	messageStart(): object {
+		return { type: "message_start" };
+	},
+
 	assistantMessage(text: string, model = "mock/test-model"): object {
 		return {
 			type: "message_end",
