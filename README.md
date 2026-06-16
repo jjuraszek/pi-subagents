@@ -825,12 +825,38 @@ Agent definitions are not loaded into context by default. Management actions let
 | `share` | boolean | false | Upload session export to GitHub Gist. |
 | `sessionDir` | string | derived | Override session log directory. |
 | `acceptance` | string/object/false | inferred | Override the run's inferred acceptance gates. Use `"auto"`, `"attested"`, `"checked"`, `"verified"`, `"reviewed"`, or `{ level: "none", reason: "..." }`. |
+| `control` | object | config defaults | Override per-run control thresholds. Supports `needsAttentionAfterMs`, `activeNoticeAfterMs`, `inFlightSilenceCeilingMs`, and `notifyOn`. |
 
 `context: "fork"` fails fast when the parent session is not persisted, the current leaf is missing, or the branched child session cannot be created. It never silently downgrades to `fresh`. In multi-agent runs, if any requested agent has `defaultContext: fork` and the launch omits `context`, the whole invocation uses forked context; pass `context: "fresh"` when you intentionally want a fresh run.
 
 Use `outputMode: "file-only"` when a saved output may be large and the parent only needs a pointer. The returned text is a compact reference like `Output saved to: /abs/report.md (48.2 KB, 2847 lines). Read this file if needed.` Failed runs and save errors still return normal inline output for debugging. In chains, later `{previous}` steps receive the same compact reference when the prior step used file-only mode.
 
 Sequential and parallel chain tasks accept `agent`, `task`, `phase`, `label`, `as`, `outputSchema`, `cwd`, `output`, `outputMode`, `reads`, `progress`, `skill`, and `model`. Parallel tasks also accept `count`. Parallel step groups accept `parallel`, `concurrency`, `failFast`, and `worktree`. If `outputSchema` is present, the child must call `structured_output` with schema-valid JSON; prose-only completion or invalid JSON fails the step. Validated structured values are preserved on the step result, and `as` also exposes a compact text representation through `{outputs.name}`.
+
+### Control configuration
+
+Per-run `control` fields override global thresholds when a task legitimately runs without observable output:
+
+| Field | Default | Description |
+|---|---|---|
+| `needsAttentionAfterMs` | `60000` | Emit `needs_attention` when a child shows no activity for this many milliseconds. |
+| `activeNoticeAfterMs` | `240000` | Emit `active_long_running` (calm notice) at this interval while a long-running task continues producing output or while an in-flight turn is running within the silence ceiling. |
+| `inFlightSilenceCeilingMs` | `600000` | While an assistant turn is in flight, a silent stretch under this bound is reported as the calm `active_long_running` state instead of `needs_attention`; silence past it re-escalates to `needs_attention`. Bounds zero-output turns without flagging healthy long thinking/streaming. |
+| `notifyOn` | `["active_long_running", "needs_attention"]` | Which activity states trigger notifications: `"needs_attention"`, `"active_long_running"`, or both. |
+
+Example:
+
+```typescript
+subagent({
+  agent: "worker",
+  task: "Run the slow migration test suite",
+  control: {
+    needsAttentionAfterMs: 300000,
+    inFlightSilenceCeilingMs: 900000,
+    notifyOn: ["needs_attention"]
+  }
+})
+```
 
 Status and control actions:
 

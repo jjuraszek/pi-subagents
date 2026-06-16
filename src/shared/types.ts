@@ -102,6 +102,7 @@ export interface ControlConfig {
 	enabled?: boolean;
 	needsAttentionAfterMs?: number;
 	activeNoticeAfterMs?: number;
+	inFlightSilenceCeilingMs?: number;
 	activeNoticeAfterTurns?: number;
 	activeNoticeAfterTokens?: number;
 	failedToolAttemptsBeforeAttention?: number;
@@ -113,6 +114,7 @@ export interface ResolvedControlConfig {
 	enabled: boolean;
 	needsAttentionAfterMs: number;
 	activeNoticeAfterMs: number;
+	inFlightSilenceCeilingMs: number;
 	activeNoticeAfterTurns?: number;
 	activeNoticeAfterTokens?: number;
 	failedToolAttemptsBeforeAttention: number;
@@ -202,6 +204,8 @@ export interface AgentProgress {
 	task: string;
 	skills?: string[];
 	lastActivityAt?: number;
+	turnOpen?: boolean;
+	lastProductiveSignalAt?: number;
 	currentTool?: string;
 	currentToolArgs?: string;
 	currentToolStartedAt?: number;
