@@ -150,6 +150,20 @@ Background runs keep working after control returns to you. Inspect active runs w
 
 They also show a compact async widget and send completion notifications. Parallel background runs show per-agent progress instead of fake chain steps. Chains with parallel groups keep their grouped shape in progress and results, so failed or paused agents stay visible next to completed ones. When a child is explicitly allowed to fan out with `tools: subagent`, its nested runs appear under that parent child in the main status tree instead of being hidden inside the child process.
 
+### Grand-total session cost
+
+The footer shows a `Σ$` status (e.g. `Σ$1.234`) with the grand total cost of the
+session: the main loop **plus** every subagent in the session's subtree -
+foreground, background/async, and nested fanout. It is distinct from the
+built-in `$` figure, which counts the main loop only; the gap between them is
+your subagent spend.
+
+The total is per-session: it is zeroed on a new session, seeded from prior spend
+on resume, and only ever rises within a session (finished subagents stay
+counted even after their state is cleaned up). Cost spent by other extensions'
+own models (for example a context-pruner running its own model) is not included
+- `Σ$` is main loop plus subagents only.
+
 You can also ask naturally:
 
 ```text

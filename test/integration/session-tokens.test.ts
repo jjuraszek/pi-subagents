@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import { createTempDir, removeTempDir, tryImport } from "../support/helpers.ts";
 
 interface SessionTokensModule {
-	parseSessionTokens(sessionDir: string): { input: number; output: number; total: number } | null;
+	parseSessionTokens(sessionDir: string): { input: number; output: number; total: number; cost: number } | null;
 }
 
 const tokensMod = await tryImport<SessionTokensModule>("./src/shared/session-tokens.ts");
@@ -35,7 +35,7 @@ describe("session tokens", { skip: !available ? "pi packages not available" : un
 			fs.writeFileSync(sessionFile, lines + "\n", "utf-8");
 
 			const tokens = tokensMod!.parseSessionTokens(sessionDir);
-			assert.deepEqual(tokens, { input: 200, output: 50, total: 250 });
+			assert.deepEqual(tokens, { input: 200, output: 50, total: 250, cost: 0 });
 		} finally {
 			removeTempDir(sessionDir);
 		}
@@ -54,7 +54,7 @@ describe("session tokens", { skip: !available ? "pi packages not available" : un
 			fs.utimesSync(newerFile, newerTime, newerTime);
 
 			const tokens = tokensMod!.parseSessionTokens(sessionDir);
-			assert.deepEqual(tokens, { input: 90, output: 10, total: 100 });
+			assert.deepEqual(tokens, { input: 90, output: 10, total: 100, cost: 0 });
 		} finally {
 			removeTempDir(sessionDir);
 		}

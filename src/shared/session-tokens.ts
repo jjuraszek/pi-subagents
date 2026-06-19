@@ -16,13 +16,14 @@ function findLatestSessionFile(sessionDir: string): string | null {
 	}
 }
 
-export function parseSessionTokens(sessionDir: string): TokenUsage | null {
+export function parseSessionTokens(sessionDir: string): (TokenUsage & { cost: number }) | null {
 	const sessionFile = findLatestSessionFile(sessionDir);
 	if (!sessionFile) return null;
 	try {
 		const content = fs.readFileSync(sessionFile, "utf-8");
 		let input = 0;
 		let output = 0;
+		let cost = 0;
 		for (const line of content.split("\n")) {
 			if (!line.trim()) continue;
 			try {
@@ -31,12 +32,13 @@ export function parseSessionTokens(sessionDir: string): TokenUsage | null {
 				if (usage) {
 					input += usage.inputTokens ?? usage.input ?? 0;
 					output += usage.outputTokens ?? usage.output ?? 0;
+					cost += usage.cost?.total ?? 0;
 				}
 			} catch {
 				// Ignore malformed lines while scanning usage entries.
 			}
 		}
-		return { input, output, total: input + output };
+		return { input, output, total: input + output, cost };
 	} catch {
 		// Usage extraction should not fail the run.
 		return null;

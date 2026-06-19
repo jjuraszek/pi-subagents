@@ -278,7 +278,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		mockPi.onCall({ output: "Async top-level report" });
 		const executor = createSubagentExecutor!({
 			pi: { events: createEventBus(), getSessionName: () => undefined },
-			state: { baseCwd: tempDir, currentSessionId: null, asyncJobs: new Map(), foregroundControls: new Map(), lastForegroundControlId: null },
+			state: { baseCwd: tempDir, currentSessionId: null, asyncJobs: new Map(), grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() }, foregroundControls: new Map(), lastForegroundControlId: null },
 			config: {},
 			asyncByDefault: false,
 			tempArtifactsDir: tempDir,
@@ -387,7 +387,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 		mockPi.onCall({ output: "Async review" });
 		const executor = createSubagentExecutor!({
 			pi: { events: createEventBus(), getSessionName: () => undefined },
-			state: { baseCwd: tempDir, currentSessionId: null, asyncJobs: new Map(), foregroundControls: new Map(), lastForegroundControlId: null },
+			state: { baseCwd: tempDir, currentSessionId: null, asyncJobs: new Map(), grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() }, foregroundControls: new Map(), lastForegroundControlId: null },
 			config: {},
 			asyncByDefault: false,
 			tempArtifactsDir: tempDir,
@@ -682,7 +682,7 @@ describe("async execution utilities", { skip: !available ? "pi packages not avai
 			mockPi.onCall({ output: "Worktree report" });
 			const executor = createSubagentExecutor!({
 				pi: { events: createEventBus(), getSessionName: () => undefined },
-				state: { baseCwd: repoDir, currentSessionId: null, asyncJobs: new Map(), foregroundControls: new Map(), lastForegroundControlId: null },
+				state: { baseCwd: repoDir, currentSessionId: null, asyncJobs: new Map(), grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() }, foregroundControls: new Map(), lastForegroundControlId: null },
 				config: {},
 				asyncByDefault: false,
 				tempArtifactsDir: repoDir,

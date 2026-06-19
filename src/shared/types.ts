@@ -536,6 +536,7 @@ export interface NestedRunSummary extends NestedRunAddress {
 	turnCount?: number;
 	toolCount?: number;
 	totalTokens?: TokenUsage;
+	totalCost?: number;
 	startedAt?: number;
 	endedAt?: number;
 	lastUpdate?: number;
@@ -623,6 +624,7 @@ export interface AsyncStatus {
 	sessionDir?: string;
 	outputFile?: string;
 	totalTokens?: TokenUsage;
+	totalCost?: number;
 	sessionFile?: string;
 	outputs?: ChainOutputMap;
 }
@@ -660,6 +662,7 @@ export interface AsyncJobState {
 	sessionDir?: string;
 	outputFile?: string;
 	totalTokens?: TokenUsage;
+	totalCost?: number;
 	sessionFile?: string;
 	controlEventCursor?: number;
 	nestedRoute?: NestedRouteInfo;
@@ -685,6 +688,11 @@ export interface SubagentState {
 	baseCwd: string;
 	currentSessionId: string | null;
 	asyncJobs: Map<string, AsyncJobState>;
+	grandTotal: {
+		mainCost: number;
+		syncCostByRun: Map<string, number>;
+		asyncCostByJob: Map<string, number>;
+	};
 	foregroundRuns?: Map<string, ForegroundResumeRun>;
 	foregroundControls: Map<string, {
 		runId: string;
@@ -911,6 +919,7 @@ export const ASYNC_DIR = path.join(TEMP_ROOT_DIR, "async-subagent-runs");
 export const CHAIN_RUNS_DIR = path.join(TEMP_ROOT_DIR, "chain-runs");
 export const TEMP_ARTIFACTS_DIR = path.join(TEMP_ROOT_DIR, "artifacts");
 export const WIDGET_KEY = "subagent-async";
+export const GRAND_TOTAL_STATUS_KEY = "subagents-grand-total";
 export const SLASH_RESULT_TYPE = "subagent-slash-result";
 export const SLASH_SUBAGENT_REQUEST_EVENT = "subagent:slash:request";
 export const SLASH_SUBAGENT_STARTED_EVENT = "subagent:slash:started";

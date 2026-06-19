@@ -13,6 +13,7 @@ import { handleManagementAction } from "../../agents/agent-management.ts";
 import { buildDoctorReport } from "../../extension/doctor.ts";
 import { clearPendingForegroundControlNotices } from "../../extension/control-notices.ts";
 import { runSync } from "./execution.ts";
+import { recordSyncCost, renderGrandTotal, sumNestedCost } from "../../extension/grand-total.ts";
 import { resolveModelCandidate } from "../shared/model-fallback.ts";
 import { aggregateParallelOutputs } from "../shared/parallel-utils.ts";
 import { recordRun } from "../shared/run-history.ts";
@@ -1310,6 +1311,8 @@ async function runChainPath(data: ExecutionContextData, deps: ExecutorDeps): Pro
 	const chainDetails = chainResult.details ? compactForegroundDetails({ ...chainResult.details, runId }) : undefined;
 	if (foregroundControl) updateForegroundNestedProjection(foregroundControl);
 	if (chainDetails) rememberForegroundRun(deps.state, { runId, mode: "chain", cwd: effectiveCwd, results: chainDetails.results });
+	recordSyncCost(deps.state.grandTotal, runId, (chainDetails?.results.reduce((sum, r) => sum + r.usage.cost, 0) ?? 0) + sumNestedCost(foregroundControl?.nestedChildren));
+	renderGrandTotal(deps.state);
 	const intercomReceipt = chainDetails && !chainDetails.results.some((result) => result.interrupted || result.detached)
 		? await maybeBuildForegroundIntercomReceipt({
 			pi: deps.pi,
@@ -1777,6 +1780,15 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 			}
 		}
 
+		const onUpdateWithCost = onUpdate
+			? (r: AgentToolResult<Details>) => {
+				const liveCost = r.details?.results?.reduce((sum, res) => sum + (res.usage?.cost ?? 0), 0) ?? 0;
+				recordSyncCost(deps.state.grandTotal, runId, liveCost);
+				renderGrandTotal(deps.state);
+				onUpdate(r);
+			}
+			: undefined;
+
 		const results = await runForegroundParallelTasks({
 			tasks,
 			taskTexts,
@@ -1805,9 +1817,12 @@ async function runParallelPath(data: ExecutionContextData, deps: ExecutorDeps): 
 			maxSubagentDepths,
 			liveResults,
 			liveProgress,
-			onUpdate,
+			onUpdate: onUpdateWithCost,
 			worktreeSetup,
 		});
+		if (foregroundControl) updateForegroundNestedProjection(foregroundControl);
+		recordSyncCost(deps.state.grandTotal, runId, results.reduce((sum, r) => sum + r.usage.cost, 0) + sumNestedCost(foregroundControl?.nestedChildren));
+		renderGrandTotal(deps.state);
 		for (let i = 0; i < results.length; i++) {
 			const run = results[i]!;
 			recordRun(run.agent, taskTexts[i]!, run.exitCode, run.progressSummary?.durationMs ?? 0);
@@ -2053,6 +2068,8 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 				foregroundControl.toolCount = firstProgress?.toolCount;
 				foregroundControl.updatedAt = Date.now();
 			}
+			recordSyncCost(deps.state.grandTotal, runId, update.details?.results?.[0]?.usage?.cost ?? 0);
+			renderGrandTotal(deps.state);
 			onUpdate(update);
 		}
 		: undefined;
@@ -2099,6 +2116,9 @@ async function runSinglePath(data: ExecutionContextData, deps: ExecutorDeps): Pr
 		foregroundControl.toolCount = r.progress?.toolCount;
 		foregroundControl.updatedAt = Date.now();
 	}
+	if (foregroundControl) updateForegroundNestedProjection(foregroundControl);
+	recordSyncCost(deps.state.grandTotal, runId, r.usage.cost + sumNestedCost(foregroundControl?.nestedChildren));
+	renderGrandTotal(deps.state);
 	recordRun(params.agent!, cleanTask, r.exitCode, r.progressSummary?.durationMs ?? 0);
 
 	if (r.progress) allProgress.push(r.progress);

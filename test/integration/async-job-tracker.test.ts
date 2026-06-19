@@ -31,6 +31,7 @@ function createState() {
 		baseCwd: "/repo",
 		currentSessionId: null,
 		asyncJobs: new Map(),
+		grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() },
 		cleanupTimers: new Map(),
 		lastUiContext: null,
 		poller: null,

@@ -225,6 +225,7 @@ export function sanitizeSummary(input: unknown, depth = 0): NestedRunSummary | u
 		? raw.steps.map((step) => sanitizeStep(step, depth + 1)).filter((step): step is NestedStepSummary => Boolean(step)).slice(0, MAX_STEPS)
 		: undefined;
 	const totalTokens = sanitizeTokenUsage(raw.totalTokens);
+	const totalCost = typeof raw.totalCost === "number" && Number.isFinite(raw.totalCost) ? raw.totalCost : undefined;
 	return {
 		id: raw.id,
 		parentRunId: raw.parentRunId,
@@ -256,6 +257,7 @@ export function sanitizeSummary(input: unknown, depth = 0): NestedRunSummary | u
 		...(clampNumber(raw.turnCount) !== undefined ? { turnCount: clampNumber(raw.turnCount) } : {}),
 		...(clampNumber(raw.toolCount) !== undefined ? { toolCount: clampNumber(raw.toolCount) } : {}),
 		...(totalTokens ? { totalTokens } : {}),
+		...(totalCost !== undefined ? { totalCost } : {}),
 		...(clampNumber(raw.startedAt) !== undefined ? { startedAt: clampNumber(raw.startedAt) } : {}),
 		...(clampNumber(raw.endedAt) !== undefined ? { endedAt: clampNumber(raw.endedAt) } : {}),
 		...(clampNumber(raw.lastUpdate) !== undefined ? { lastUpdate: clampNumber(raw.lastUpdate) } : {}),
@@ -778,6 +780,7 @@ export function nestedSummaryFromAsyncStatus(status: AsyncStatus, asyncDir: stri
 		...(status.turnCount !== undefined ? { turnCount: status.turnCount } : {}),
 		...(status.toolCount !== undefined ? { toolCount: status.toolCount } : {}),
 		...(status.totalTokens ? { totalTokens: status.totalTokens } : {}),
+		...(status.totalCost !== undefined ? { totalCost: status.totalCost } : {}),
 		...(status.startedAt !== undefined ? { startedAt: status.startedAt } : { startedAt: fallback.ts }),
 		...(status.endedAt !== undefined ? { endedAt: status.endedAt } : {}),
 		lastUpdate: status.lastUpdate ?? fallback.ts,

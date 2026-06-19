@@ -42,6 +42,7 @@ import {
 	type SubagentState,
 	ASYNC_DIR,
 	DEFAULT_ARTIFACT_CONFIG,
+	GRAND_TOTAL_STATUS_KEY,
 	RESULTS_DIR,
 	SLASH_RESULT_TYPE,
 	SUBAGENT_ASYNC_COMPLETE_EVENT,
@@ -49,6 +50,7 @@ import {
 	SUBAGENT_CONTROL_EVENT,
 	WIDGET_KEY,
 } from "../shared/types.ts";
+import { emptyGrandTotal, recordMainCost, renderGrandTotal, seedMainCostFromSession } from "./grand-total.ts";
 import {
 	clearPendingForegroundControlNotices,
 	formatSubagentControlNotice,
@@ -250,6 +252,7 @@ export default function registerSubagentExtension(pi: ExtensionAPI): void {
 			schedule: () => false,
 			clear: () => {},
 		},
+		grandTotal: emptyGrandTotal(),
 	};
 
 	const { startResultWatcher, primeExistingResults, stopResultWatcher } = createResultWatcher(
@@ -497,6 +500,13 @@ DIAGNOSTICS:
 	];
 	globalStore[eventUnsubscribeStoreKey] = eventUnsubscribes;
 
+	pi.on("message_end", (event, ctx) => {
+		if (event.message.role !== "assistant") return;
+		state.lastUiContext = ctx;
+		recordMainCost(state.grandTotal, (event.message as { usage?: { cost?: { total?: number } } }).usage?.cost?.total ?? 0);
+		renderGrandTotal(state);
+	});
+
 	pi.on("tool_result", (event, ctx) => {
 		if (event.toolName !== "subagent") return;
 		if (!ctx.hasUI) return;
@@ -528,6 +538,9 @@ DIAGNOSTICS:
 		resetJobs(ctx);
 		restoreSlashFinalSnapshots(ctx.sessionManager.getEntries());
 		primeExistingResults();
+		state.grandTotal = emptyGrandTotal();
+		seedMainCostFromSession(state, ctx);
+		renderGrandTotal(state);
 	};
 
 	pi.on("session_start", (_event, ctx) => {
@@ -565,6 +578,7 @@ DIAGNOSTICS:
 		try {
 			if (state.lastUiContext?.hasUI) {
 				state.lastUiContext.ui.setWidget(WIDGET_KEY, undefined);
+				state.lastUiContext.ui.setStatus(GRAND_TOTAL_STATUS_KEY, undefined);
 			}
 		} catch (error) {
 			if (!isStaleExtensionContextError(error)) throw error;

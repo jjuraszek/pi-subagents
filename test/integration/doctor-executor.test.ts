@@ -27,6 +27,7 @@ function makeState(cwd: string) {
 		baseCwd: cwd,
 		currentSessionId: null,
 		asyncJobs: new Map(),
+		grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() },
 		foregroundControls: new Map(),
 		lastForegroundControlId: null,
 		cleanupTimers: new Map(),

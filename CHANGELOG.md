@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- `Σ$` footer status: grand-total session cost spanning the main loop plus every subagent subtree (foreground, async, nested fanout). Distinct from the built-in main-loop `$`; per-session, monotonic, seeded from prior spend on resume. Other extensions' model cost is out of scope.
+
 ### Removed
 - `researcher` builtin agent and the `/parallel-research` prompt command.
 - All `pi-web-access` references (`web_search`, `fetch_content`, `get_search_content`).

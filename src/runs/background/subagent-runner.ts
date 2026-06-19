@@ -973,6 +973,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 	let currentActivityState: ActivityState | undefined;
 	let activityTimer: NodeJS.Timeout | undefined;
 	let previousCumulativeTokens: TokenUsage = { input: 0, output: 0, total: 0 };
+	let previousCumulativeCost = 0;
 	let latestSessionFile: string | undefined;
 
 	const parallelGroups: Array<{ start: number; count: number; stepIndex: number }> = [];
@@ -1292,6 +1293,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				const totalInput = statusPayload.totalTokens?.input ?? 0;
 				const totalOutput = statusPayload.totalTokens?.output ?? 0;
 				statusPayload.totalTokens = { input: totalInput + input, output: totalOutput + output, total: totalInput + totalOutput + input + output };
+				statusPayload.totalCost = (statusPayload.totalCost ?? 0) + (usage.cost?.total ?? 0);
 			}
 			statusPayload.turnCount = Math.max(statusPayload.turnCount ?? 0, step.turnCount);
 		}
@@ -1926,8 +1928,10 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 						output: previousCumulativeTokens.output + taskTokens.output,
 						total: previousCumulativeTokens.total + taskTokens.total,
 					};
+					previousCumulativeCost += sessionTokens?.cost ?? 0;
 				}
 				statusPayload.totalTokens = { ...previousCumulativeTokens };
+				statusPayload.totalCost = previousCumulativeCost;
 				statusPayload.lastUpdate = Date.now();
 				writeStatusPayload();
 
@@ -2070,6 +2074,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 				: null;
 			if (cumulativeTokens) {
 				previousCumulativeTokens = cumulativeTokens;
+				previousCumulativeCost = cumulativeTokens.cost;
 			} else {
 				stepTokens = tokenUsageFromAttempts(singleResult.modelAttempts);
 				if (stepTokens) {
@@ -2098,6 +2103,7 @@ async function runSubagent(config: SubagentRunConfig): Promise<void> {
 			if (stepTokens) {
 				statusPayload.steps[flatIndex].tokens = stepTokens;
 				statusPayload.totalTokens = { ...previousCumulativeTokens };
+				statusPayload.totalCost = previousCumulativeCost;
 			}
 			statusPayload.lastUpdate = stepEndTime;
 			writeStatusPayload();

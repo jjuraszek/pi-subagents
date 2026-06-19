@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { renderWidget, widgetRenderKey } from "../../tui/render.ts";
+import { recordAsyncCost, renderGrandTotal, sumNestedCost } from "../../extension/grand-total.ts";
 import { formatControlNoticeMessage } from "../shared/subagent-control.ts";
 import {
 	type AsyncJobState,
@@ -204,6 +205,11 @@ export function createAsyncJobTracker(pi: Pick<ExtensionAPI, "events">, state: S
 						job.sessionDir = status.sessionDir ?? job.sessionDir;
 						job.outputFile = status.outputFile ?? job.outputFile;
 						job.totalTokens = status.totalTokens ?? job.totalTokens;
+						job.totalCost = status.totalCost ?? job.totalCost;
+						if (job.totalCost !== undefined) {
+							recordAsyncCost(state.grandTotal, job.asyncId, (job.totalCost ?? 0) + sumNestedCost(job.nestedChildren));
+							renderGrandTotal(state);
+						}
 						job.sessionFile = status.sessionFile ?? job.sessionFile;
 						if ((job.status === "complete" || job.status === "failed" || job.status === "paused") && !nestedRefreshFailed && !hasLiveNestedDescendants(job.nestedChildren) && (previousStatus !== job.status || !state.cleanupTimers.has(job.asyncId))) {
 							scheduleCleanup(job.asyncId);
@@ -283,6 +289,10 @@ export function createAsyncJobTracker(pi: Pick<ExtensionAPI, "events">, state: S
 			} catch (error) {
 				nestedRefreshFailed = true;
 				console.error(`Failed to refresh nested async descendants for '${job.asyncDir}':`, error);
+			}
+			if (job.totalCost !== undefined) {
+				recordAsyncCost(state.grandTotal, job.asyncId, (job.totalCost ?? 0) + sumNestedCost(job.nestedChildren));
+				renderGrandTotal(state);
 			}
 		}
 		if (state.lastUiContext) {

@@ -12,6 +12,7 @@ function createState(): SubagentState {
 		baseCwd: "/repo",
 		currentSessionId: null,
 		asyncJobs: new Map(),
+		grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() },
 		foregroundControls: new Map(),
 		lastForegroundControlId: null,
 		cleanupTimers: new Map(),
