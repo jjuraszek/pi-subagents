@@ -11,7 +11,7 @@ function makeState(): SubagentState {
 		baseCwd: "/tmp/project",
 		currentSessionId: null,
 		asyncJobs: new Map(),
-		grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() },
+		grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map(), externalCostBySource: new Map() },
 		foregroundControls: new Map(),
 		lastForegroundControlId: null,
 		pendingForegroundControlNotices: new Map(),

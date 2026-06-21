@@ -6,6 +6,7 @@ import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { discoverAgents, discoverAgentsAll, type ChainConfig } from "../agents/agents.ts";
 import type { SubagentParamsLike } from "../runs/foreground/subagent-executor.ts";
 import { isDynamicParallelStep, isParallelStep, type ChainStep } from "../shared/settings.ts";
+import { wrapStatus } from "../shared/status-format.ts";
 import { assertJsonSchemaObject } from "../runs/shared/structured-output.ts";
 import type { SlashSubagentResponse, SlashSubagentUpdate } from "./slash-bridge.ts";
 import {
@@ -199,7 +200,7 @@ async function requestSlashRun(
 			if ((data as { requestId?: unknown }).requestId !== requestId) return;
 			started = true;
 			clearTimeout(startTimeout);
-			if (ctx.hasUI) ctx.ui.setStatus("subagent-slash", "running...");
+			if (ctx.hasUI) ctx.ui.setStatus("subagent-slash", wrapStatus("running..."));
 		};
 
 		const onResponse = (data: unknown) => {
@@ -218,7 +219,7 @@ async function requestSlashRun(
 			if (!ctx.hasUI) return;
 			const tool = update.currentTool ? ` ${update.currentTool}` : "";
 			const count = update.toolCount ?? 0;
-			ctx.ui.setStatus("subagent-slash", `${count} tools${tool} | Ctrl+O live detail`);
+			ctx.ui.setStatus("subagent-slash", wrapStatus(`${count} tools${tool} | Ctrl+O live detail`));
 		};
 
 		const onTerminalInput = ctx.hasUI

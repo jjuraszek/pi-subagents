@@ -3,7 +3,11 @@
 ## [Unreleased]
 
 ### Added
-- `Σ$` footer status: grand-total session cost spanning the main loop plus every subagent subtree (foreground, async, nested fanout). Distinct from the built-in main-loop `$`; per-session, monotonic, seeded from prior spend on resume. Other extensions' model cost is out of scope.
+- `Σ$` footer status: grand-total session cost spanning the main loop plus every subagent subtree (foreground, async, nested fanout). Distinct from the built-in main-loop `$`; per-session, seeded from prior spend on resume. The main/sync/async slices are monotonic; the external slice may move down if a producer corrects its cumulative total downward.
+- `cost:external` cross-extension cost protocol: any extension can emit cumulative-per-source LLM spend on the `pi.events` `"cost:external"` channel; pi-subagents folds it into `Σ$` and surfaces a per-source breakdown in `subagent({ action: "doctor" })`.
+
+### Changed
+- All package footer statuses are now wrapped in `│ ... │` box-drawing dividers so they stay visually isolated regardless of extension load order.
 
 ### Removed
 - `researcher` builtin agent and the `/parallel-research` prompt command.

@@ -47,3 +47,9 @@ export function formatParallelOutcome(steps: StepStatusLike[], total: number, op
 	if (paused > 0) parts.push(`${paused} paused`);
 	return parts.join(" · ");
 }
+
+export const STATUS_DIVIDER = "│";
+
+export function wrapStatus(text: string): string {
+	return `${STATUS_DIVIDER} ${text} ${STATUS_DIVIDER}`;
+}

@@ -50,7 +50,7 @@ import {
 	SUBAGENT_CONTROL_EVENT,
 	WIDGET_KEY,
 } from "../shared/types.ts";
-import { emptyGrandTotal, recordMainCost, renderGrandTotal, seedMainCostFromSession } from "./grand-total.ts";
+import { emptyGrandTotal, recordExternalCost, recordMainCost, renderGrandTotal, seedMainCostFromSession } from "./grand-total.ts";
 import {
 	clearPendingForegroundControlNotices,
 	formatSubagentControlNotice,
@@ -497,6 +497,11 @@ DIAGNOSTICS:
 		pi.events.on(SUBAGENT_ASYNC_STARTED_EVENT, handleStarted),
 		pi.events.on(SUBAGENT_ASYNC_COMPLETE_EVENT, handleComplete),
 		pi.events.on(SUBAGENT_CONTROL_EVENT, controlEventHandler),
+		pi.events.on("cost:external", (payload) => {
+			if (recordExternalCost(state.grandTotal, payload)) {
+				renderGrandTotal(state);
+			}
+		}),
 	];
 	globalStore[eventUnsubscribeStoreKey] = eventUnsubscribes;
 

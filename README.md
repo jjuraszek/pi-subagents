@@ -159,10 +159,31 @@ built-in `$` figure, which counts the main loop only; the gap between them is
 your subagent spend.
 
 The total is per-session: it is zeroed on a new session, seeded from prior spend
-on resume, and only ever rises within a session (finished subagents stay
-counted even after their state is cleaned up). Cost spent by other extensions'
-own models (for example a context-pruner running its own model) is not included
-- `Σ$` is main loop plus subagents only.
+on resume, and only ever rises within a session for the main/sync/async slices
+(finished subagents stay counted even after their state is cleaned up). The
+external slice may move down if a producer corrects its cumulative total
+downward. External model cost is opt-in via the `cost:external` protocol: any
+extension can report its own LLM spend and it is folded into `Σ$`.
+
+#### cost:external protocol
+
+Any extension can contribute its LLM spend to `Σ$` by emitting on the
+`pi.events` string channel `"cost:external"`.
+
+**Payload fields**
+
+| Field | Type | Meaning |
+|---|---|---|
+| `source` | string | Stable producer id, e.g. `pi-context-prune`. Required; empty string causes the payload to be dropped. |
+| `totalCost` | number | Cumulative USD spent by this producer this session. Negative values are clamped to 0; non-finite values cause the payload to be dropped. |
+| `inputTokens` | number (optional) | Cumulative input tokens this session. Invalid values are dropped individually; cost is kept. |
+| `outputTokens` | number (optional) | Cumulative output tokens this session. Invalid values are dropped individually; cost is kept. |
+
+- **Cumulative, not deltas.** A producer emits its running session total on every update. Pi-subagents tracks the latest value per `source` and updates `Σ$` accordingly.
+- **Idempotent/replay-safe.** Re-emitting the same `source` overwrites the stored value; it never double-counts.
+- **Live-only.** Pi-subagents does not persist or reseed the external slice. A producer SHOULD re-emit its cumulative total on its own `session_start` to restore visibility after a session resume.
+- **Sanitization at the boundary.** Non-finite `totalCost` or a missing/empty `source` drops the whole payload with one `console.warn`. Negative `totalCost` is clamped to 0. Invalid optional token fields are dropped individually while the cost is kept.
+- **Surfacing.** The external slice is folded into the `Σ$` footer. A per-source breakdown appears in `subagent({ action: "doctor" })`.
 
 You can also ask naturally:
 
@@ -887,6 +908,8 @@ subagent({ action: "doctor" })
 ```
 
 `status` resolves exact foreground ids, top-level async ids, and nested run ids before falling back to prefix matching. Nested status shows the root/parent path, nested children, session/artifact paths when known, and nested control commands. Inside child-safe fanout mode, bare `status` requires an id when no local foreground run is active, so children cannot enumerate unrelated top-level async runs. Bare `interrupt` still targets only the visible top-level run; interrupting a nested run requires its explicit nested id.
+
+`doctor` prints a full setup report: intercom reachability, config validation, registered agents/chains, run history, and a `Cost` section that breaks down spend by main/sync/async/external slices. When external producers have reported via the `cost:external` protocol, the `Cost` section includes a per-source row for each producer.
 
 `resume` sends the follow-up directly when an async child is still reachable over intercom. After completion, it revives the child by starting a new async child from the stored child session file. Multi-child async runs and remembered foreground single, parallel, or chain runs can be revived by passing `index` to choose the child. Nested runs can be resumed by nested id when their live route or persisted session metadata is available. Revive starts a new child process from the old session context; it does not restart the same OS process, and it requires the chosen child to have a persisted `.jsonl` session file.
 

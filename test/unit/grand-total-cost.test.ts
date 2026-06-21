@@ -18,7 +18,7 @@ test("parseSessionTokens sums cost.total across assistant entries", () => {
     assert.ok(Math.abs(result!.cost - 0.03) < 1e-9);
 });
 
-import { recompute, recordMainCost, recordSyncCost, recordAsyncCost, emptyGrandTotal, formatGrandTotal, sumNestedCost } from "../../src/extension/grand-total.ts";
+import { recompute, recordMainCost, recordSyncCost, recordAsyncCost, emptyGrandTotal, formatGrandTotal, sumNestedCost, recordExternalCost } from "../../src/extension/grand-total.ts";
 
 test("recompute sums all three sources", () => {
     const gt = emptyGrandTotal();
@@ -54,7 +54,7 @@ test("zero/absent cost adds nothing, never NaN", () => {
 });
 
 test("formatGrandTotal renders three decimals with sigma", () => {
-    assert.equal(formatGrandTotal(3.75), "│ Σ$3.750");
+    assert.equal(formatGrandTotal(3.75), "│ Σ$3.750 │");
 });
 
 test("recordSyncCost never lowers an existing value", () => {
@@ -88,6 +88,72 @@ test("recordAsyncCost never lowers an existing value", () => {
     recordAsyncCost(gt, "j1", 1.0);
     recordAsyncCost(gt, "j1", 0.0);
     assert.ok(Math.abs(recompute(gt) - 1.0) < 1e-9);
+});
+
+test("recordExternalCost: valid payload sets map and returns true", () => {
+	const gt = emptyGrandTotal();
+	assert.equal(recordExternalCost(gt, { source: "pi-context-prune", totalCost: 0.5 }), true);
+	assert.ok(Math.abs(recompute(gt) - 0.5) < 1e-9);
+});
+test("recordExternalCost: re-emit overwrites same source (no double-count)", () => {
+	const gt = emptyGrandTotal();
+	recordExternalCost(gt, { source: "s", totalCost: 0.5 });
+	recordExternalCost(gt, { source: "s", totalCost: 0.9 });
+	assert.ok(Math.abs(recompute(gt) - 0.9) < 1e-9);
+});
+test("recordExternalCost: two sources sum", () => {
+	const gt = emptyGrandTotal();
+	recordExternalCost(gt, { source: "a", totalCost: 0.2 });
+	recordExternalCost(gt, { source: "b", totalCost: 0.3 });
+	assert.ok(Math.abs(recompute(gt) - 0.5) < 1e-9);
+});
+test("recordExternalCost: clamps negative totalCost to 0, keeps payload", () => {
+	const gt = emptyGrandTotal();
+	assert.equal(recordExternalCost(gt, { source: "s", totalCost: -5 }), true);
+	assert.ok(Math.abs(recompute(gt)) < 1e-9);
+});
+test("recordExternalCost: rejects non-finite totalCost (false, map untouched)", () => {
+	const gt = emptyGrandTotal();
+	assert.equal(recordExternalCost(gt, { source: "s", totalCost: Number.NaN }), false);
+	assert.equal(recordExternalCost(gt, { source: "s", totalCost: Number.POSITIVE_INFINITY }), false);
+	assert.equal(gt.externalCostBySource.size, 0);
+});
+test("recordExternalCost: rejects empty/missing/whitespace source", () => {
+	const gt = emptyGrandTotal();
+	assert.equal(recordExternalCost(gt, { source: "", totalCost: 1 }), false);
+	assert.equal(recordExternalCost(gt, { source: "   ", totalCost: 1 }), false);
+	assert.equal(recordExternalCost(gt, { totalCost: 1 }), false);
+	assert.equal(recordExternalCost(gt, null), false);
+	assert.equal(gt.externalCostBySource.size, 0);
+});
+test("recordExternalCost: drops bad optional token field but keeps cost", () => {
+	const gt = emptyGrandTotal();
+	recordExternalCost(gt, { source: "s", totalCost: 0.4, inputTokens: -3, outputTokens: 100 });
+	const entry = gt.externalCostBySource.get("s");
+	assert.equal(entry?.inputTokens, undefined);
+	assert.equal(entry?.outputTokens, 100);
+	assert.ok(Math.abs(recompute(gt) - 0.4) < 1e-9);
+});
+test("recordExternalCost: ignores unknown extra fields", () => {
+	const gt = emptyGrandTotal();
+	assert.equal(recordExternalCost(gt, { source: "s", totalCost: 0.1, extra: "x" }), true);
+	assert.ok(Math.abs(recompute(gt) - 0.1) < 1e-9);
+});
+test("recompute folds external alongside main/sync/async", () => {
+	const gt = emptyGrandTotal();
+	recordMainCost(gt, 1.0);
+	recordSyncCost(gt, "r1", 0.5);
+	recordAsyncCost(gt, "j1", 0.25);
+	recordExternalCost(gt, { source: "e", totalCost: 0.25 });
+	assert.ok(Math.abs(recompute(gt) - 2.0) < 1e-9);
+});
+test("emptyGrandTotal has empty externalCostBySource", () => {
+	const gt = emptyGrandTotal();
+	assert.ok(gt.externalCostBySource instanceof Map);
+	assert.equal(gt.externalCostBySource.size, 0);
+});
+test("formatGrandTotal wraps Σ$ in dividers on both sides", () => {
+	assert.equal(formatGrandTotal(0.042), "│ Σ$0.042 │");
 });
 
 test("monotonic across a scripted sequence", () => {

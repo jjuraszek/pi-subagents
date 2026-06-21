@@ -1,6 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { GRAND_TOTAL_STATUS_KEY } from "../shared/types.ts";
-import type { NestedRunSummary, SubagentState } from "../shared/types.ts";
+import type { ExternalCostEntry, NestedRunSummary, SubagentState } from "../shared/types.ts";
+import { wrapStatus } from "../shared/status-format.ts";
 
 export type GrandTotal = SubagentState["grandTotal"];
 
@@ -13,6 +14,7 @@ export function emptyGrandTotal(): GrandTotal {
 		mainCost: 0,
 		syncCostByRun: new Map(),
 		asyncCostByJob: new Map(),
+		externalCostBySource: new Map(),
 	};
 }
 
@@ -28,18 +30,45 @@ export function recordAsyncCost(gt: GrandTotal, jobId: string, cost: number): vo
 	gt.asyncCostByJob.set(jobId, Math.max(gt.asyncCostByJob.get(jobId) ?? 0, safe(cost)));
 }
 
+function sanitizeTokens(value: unknown): number | undefined {
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+	return value;
+}
+
+export function recordExternalCost(gt: GrandTotal, payload: unknown): boolean {
+	if (!payload || typeof payload !== "object") {
+		console.warn("[pi-subagents] cost:external rejected (source=<missing>): payload not an object");
+		return false;
+	}
+	const p = payload as Record<string, unknown>;
+	const source = typeof p.source === "string" ? p.source.trim() : "";
+	if (!source) {
+		console.warn("[pi-subagents] cost:external rejected (source=<missing>): missing or empty source");
+		return false;
+	}
+	if (typeof p.totalCost !== "number" || !Number.isFinite(p.totalCost)) {
+		console.warn(`[pi-subagents] cost:external rejected (source=${source}): totalCost not finite`);
+		return false;
+	}
+	const entry: ExternalCostEntry = { totalCost: Math.max(0, p.totalCost) };
+	const inputTokens = sanitizeTokens(p.inputTokens);
+	if (inputTokens !== undefined) entry.inputTokens = inputTokens;
+	const outputTokens = sanitizeTokens(p.outputTokens);
+	if (outputTokens !== undefined) entry.outputTokens = outputTokens;
+	gt.externalCostBySource.set(source, entry);
+	return true;
+}
+
 export function recompute(gt: GrandTotal): number {
 	let total = safe(gt.mainCost);
 	for (const v of gt.syncCostByRun.values()) total += safe(v);
 	for (const v of gt.asyncCostByJob.values()) total += safe(v);
+	for (const e of gt.externalCostBySource.values()) total += safe(e.totalCost);
 	return total;
 }
 
 export function formatGrandTotal(total: number): string {
-	// Leading divider separates this from the preceding extension status on the
-	// shared footer line (statuses are space-joined, so a bare `Σ$` reads as the
-	// neighbour's figure).
-	return `│ Σ$${total.toFixed(3)}`;
+	return wrapStatus(`Σ$${total.toFixed(3)}`);
 }
 
 export function renderGrandTotal(state: SubagentState): void {

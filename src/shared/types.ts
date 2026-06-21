@@ -684,6 +684,12 @@ export interface ForegroundResumeRun {
 	children: ForegroundResumeChild[];
 }
 
+export interface ExternalCostEntry {
+	totalCost: number;
+	inputTokens?: number;
+	outputTokens?: number;
+}
+
 export interface SubagentState {
 	baseCwd: string;
 	currentSessionId: string | null;
@@ -692,6 +698,7 @@ export interface SubagentState {
 		mainCost: number;
 		syncCostByRun: Map<string, number>;
 		asyncCostByJob: Map<string, number>;
+		externalCostBySource: Map<string, ExternalCostEntry>;
 	};
 	foregroundRuns?: Map<string, ForegroundResumeRun>;
 	foregroundControls: Map<string, {

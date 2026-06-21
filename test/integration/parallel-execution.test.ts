@@ -115,7 +115,7 @@ describe("parallel agent execution", { skip: !piAvailable ? "pi packages not ava
 	function makeExecutor(agents = [makeAgent("echo")]) {
 		return createSubagentExecutor({
 			pi: { events: createEventBus(), getSessionName: () => undefined },
-			state: { baseCwd: tempDir, currentSessionId: null, asyncJobs: new Map(), grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() }, foregroundControls: new Map(), lastForegroundControlId: null },
+			state: { baseCwd: tempDir, currentSessionId: null, asyncJobs: new Map(), grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map(), externalCostBySource: new Map() }, foregroundControls: new Map(), lastForegroundControlId: null },
 			config: {},
 			asyncByDefault: false,
 			tempArtifactsDir: tempDir,

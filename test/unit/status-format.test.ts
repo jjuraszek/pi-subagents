@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { aggregateStepStatus, formatActivityLabel, formatParallelOutcome } from "../../src/shared/status-format.ts";
+import { aggregateStepStatus, formatActivityLabel, formatParallelOutcome, STATUS_DIVIDER, wrapStatus } from "../../src/shared/status-format.ts";
 import type { AsyncJobStep } from "../../src/shared/types.ts";
 
 describe("status format helpers", () => {
@@ -15,5 +15,15 @@ describe("status format helpers", () => {
 		assert.equal(aggregateStepStatus(steps), "running");
 		assert.equal(formatParallelOutcome(steps, 3), "1 agent running · 1/3 done · 1 failed");
 		assert.equal(formatParallelOutcome(steps, 3, { showRunning: false }), "1/3 done · 1 failed");
+	});
+});
+
+describe("wrapStatus", () => {
+	it("wraps text in box-drawing dividers on both sides", () => {
+		assert.equal(wrapStatus("Σ$0.042"), "│ Σ$0.042 │");
+	});
+
+	it("STATUS_DIVIDER is the box-drawing vertical (U+2502)", () => {
+		assert.equal(STATUS_DIVIDER, "│");
 	});
 });

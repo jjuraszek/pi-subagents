@@ -18,7 +18,7 @@ function stateWithForeground(id: string): SubagentState {
 		baseCwd: "",
 		currentSessionId: null,
 		asyncJobs: new Map(),
-		grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() },
+		grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map(), externalCostBySource: new Map() },
 		foregroundRuns: new Map(),
 		foregroundControls: new Map([[id, { runId: id, mode: "single", startedAt: 1, updatedAt: 1 }]]),
 		lastForegroundControlId: id,

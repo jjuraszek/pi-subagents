@@ -151,6 +151,41 @@ function formatDiscovery(input: DoctorReportInput, deps: DoctorDeps): string[] {
 	];
 }
 
+function formatExternalTokens(n: number): string {
+	return n < 1000 ? String(n) : `${(Math.round(n / 100) / 10).toFixed(1)}k`;
+}
+
+function formatCostLines(input: DoctorReportInput): string[] {
+	const gt = input.state.grandTotal;
+	const sumFinite = (nums: Iterable<number>): number => {
+		let t = 0;
+		for (const n of nums) t += Number.isFinite(n) ? n : 0;
+		return t;
+	};
+	const main = Number.isFinite(gt.mainCost) ? gt.mainCost : 0;
+	const sync = sumFinite(gt.syncCostByRun.values());
+	const asyncTotal = sumFinite(gt.asyncCostByJob.values());
+	let external = 0;
+	for (const e of gt.externalCostBySource.values()) external += Number.isFinite(e.totalCost) ? e.totalCost : 0;
+	const lines = [
+		"Cost",
+		`- main: $${main.toFixed(4)}`,
+		`- sync: $${sync.toFixed(4)} (${gt.syncCostByRun.size} runs)`,
+		`- async: $${asyncTotal.toFixed(4)} (${gt.asyncCostByJob.size} jobs)`,
+		`- external: $${external.toFixed(4)} (${gt.externalCostBySource.size} sources)`,
+	];
+	for (const [source, e] of gt.externalCostBySource) {
+		let row = `  - ${source} $${(Number.isFinite(e.totalCost) ? e.totalCost : 0).toFixed(4)}`;
+		const tokenParts: string[] = [];
+		if (e.inputTokens !== undefined) tokenParts.push(`in ${formatExternalTokens(e.inputTokens)}`);
+		if (e.outputTokens !== undefined) tokenParts.push(`out ${formatExternalTokens(e.outputTokens)}`);
+		if (tokenParts.length > 0) row += ` (${tokenParts.join(" / ")})`;
+		lines.push(row);
+	}
+	lines.push(`- Σ total: $${(main + sync + asyncTotal + external).toFixed(4)}`);
+	return lines;
+}
+
 function formatIntercomDiagnostic(diagnostic: IntercomBridgeDiagnostic, context: "fresh" | "fork" | undefined): string[] {
 	const lines = [
 		`- bridge: ${diagnostic.active ? "active" : "inactive"}${diagnostic.reason ? ` (${diagnostic.reason})` : ""}`,
@@ -194,6 +229,8 @@ export function buildDoctorReport(input: DoctorReportInput): string {
 			orchestratorTarget: input.orchestratorTarget,
 			cwd: input.cwd,
 		}), input.context).join("\n")).split("\n"),
+		"",
+		...formatCostLines(input),
 	];
 	return lines.join("\n");
 }

@@ -12,7 +12,7 @@ function makeState(cwd: string): SubagentState {
 		baseCwd: cwd,
 		currentSessionId: "session-current",
 		asyncJobs: new Map(),
-		grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map() },
+		grandTotal: { mainCost: 0, syncCostByRun: new Map(), asyncCostByJob: new Map(), externalCostBySource: new Map() },
 		foregroundControls: new Map(),
 		lastForegroundControlId: null,
 		cleanupTimers: new Map(),
@@ -156,6 +156,69 @@ describe("buildDoctorReport", () => {
 			assert.match(report, /- agents\/chains: failed — Error: discovery exploded/);
 			assert.match(report, /- skills: total 0 \(none\)/);
 			assert.match(report, /- bridge: inactive \(bridge mode is fork-only and context is not fork\)/);
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("includes an empty Cost section when externalCostBySource is empty", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-doctor-cost-empty-"));
+		try {
+			const paths = {
+				tempRootDir: path.join(root, "temp-root"),
+				asyncDir: path.join(root, "async"),
+				resultsDir: path.join(root, "results"),
+				chainRunsDir: path.join(root, "chains"),
+			};
+			for (const dir of Object.values(paths)) fs.mkdirSync(dir, { recursive: true });
+			const report = buildDoctorReport({
+				cwd: root,
+				config: {},
+				state: makeState(root),
+				paths,
+				deps: {
+					isAsyncAvailable: () => false,
+					discoverAgentsAll: () => ({ builtin: [], user: [], project: [], chains: [], userDir: "", projectDir: "", userChainDir: "", projectChainDir: "", userSettingsPath: "", projectSettingsPath: "" }),
+					discoverAvailableSkills: () => [],
+					diagnoseIntercomBridge: () => ({ active: false, mode: "fork-only", wantsIntercom: false, piIntercomAvailable: false, extensionDir: "", reason: "test", intercomConfigEnabled: true }),
+				},
+			});
+			assert.match(report, /^Cost$/m);
+			assert.ok(report.includes("- external: $0.0000 (0 sources)"));
+			assert.doesNotMatch(report, /^  - /m);
+		} finally {
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("includes per-source rows in Cost section when externalCostBySource is non-empty", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-doctor-cost-filled-"));
+		try {
+			const paths = {
+				tempRootDir: path.join(root, "temp-root"),
+				asyncDir: path.join(root, "async"),
+				resultsDir: path.join(root, "results"),
+				chainRunsDir: path.join(root, "chains"),
+			};
+			for (const dir of Object.values(paths)) fs.mkdirSync(dir, { recursive: true });
+			const state = makeState(root);
+			state.grandTotal.externalCostBySource.set("pi-context-prune", { totalCost: 0.12, inputTokens: 1234, outputTokens: 400 });
+			state.grandTotal.externalCostBySource.set("other", { totalCost: 0.03 });
+			const report = buildDoctorReport({
+				cwd: root,
+				config: {},
+				state,
+				paths,
+				deps: {
+					isAsyncAvailable: () => false,
+					discoverAgentsAll: () => ({ builtin: [], user: [], project: [], chains: [], userDir: "", projectDir: "", userChainDir: "", projectChainDir: "", userSettingsPath: "", projectSettingsPath: "" }),
+					discoverAvailableSkills: () => [],
+					diagnoseIntercomBridge: () => ({ active: false, mode: "fork-only", wantsIntercom: false, piIntercomAvailable: false, extensionDir: "", reason: "test", intercomConfigEnabled: true }),
+				},
+			});
+			assert.ok(report.includes("- external: $0.1500 (2 sources)"));
+			assert.match(report, /  - pi-context-prune \$0\.1200 \(in 1\.2k \/ out 400\)/);
+			assert.match(report, /  - other \$0\.0300/);
 		} finally {
 			fs.rmSync(root, { recursive: true, force: true });
 		}
