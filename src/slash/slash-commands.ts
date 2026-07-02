@@ -557,8 +557,8 @@ export function registerSlashCommands(
 	});
 
 
-	pi.registerCommand("subagents-doctor", {
-		description: "Show subagent diagnostics",
+	pi.registerCommand("cohort-doctor", {
+		description: "Show pi-cohort diagnostics",
 		handler: async (_args, ctx) => {
 			await runSlashSubagent(pi, ctx, { action: "doctor" });
 		},

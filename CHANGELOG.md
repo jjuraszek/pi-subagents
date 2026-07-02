@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.0.0] - 2026-07-02
+
+Completes the `pi-subagents` -> `pi-cohort` rename by rebranding the last user-facing identifiers that still carried the old name.
+
+### Changed
+- **BREAKING:** Renamed the `/subagents-doctor` slash command to `/cohort-doctor`. The old name is gone; update any muscle-memory or scripted invocations.
+- **BREAKING:** Moved the extension config file from `<PI_CODING_AGENT_DIR>/extensions/subagent/config.json` to `<PI_CODING_AGENT_DIR>/extensions/pi-cohort/config.json`, aligning it with where `pi install npm:pi-cohort` places the extension. An existing `extensions/subagent/config.json` is no longer read; move it to the new path. The same rename applies to the default intercom-bridge settings dir and the documented `instructionFile` relative-path root.
+- Rebranded the internal async widget and grand-total status keys (`subagent-async` -> `pi-cohort-async`, `subagents-grand-total` -> `pi-cohort-grand-total`). No user action required.
+
 ## [2.0.1] - 2026-07-02
 
 ### Fixed

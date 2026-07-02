@@ -820,13 +820,13 @@ Gather context
 });
 
 
-describe("subagents-doctor slash command", { skip: !available ? "slash-commands.ts not importable" : undefined }, () => {
+describe("cohort-doctor slash command", { skip: !available ? "slash-commands.ts not importable" : undefined }, () => {
 	beforeEach(() => {
 		clearSlashSnapshots?.();
 	});
 
 	it("routes to the doctor tool action", async () => {
-		const { params } = await captureSlashCommandParams("subagents-doctor", "", process.cwd());
+		const { params } = await captureSlashCommandParams("cohort-doctor", "", process.cwd());
 		assert.deepEqual(params, { action: "doctor" });
 	});
 

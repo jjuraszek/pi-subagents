@@ -22,7 +22,7 @@ function defaultIntercomConfigPath(agentDir = defaultAgentDir()): string {
 }
 
 function defaultSubagentConfigDir(agentDir = defaultAgentDir()): string {
-	return path.join(agentDir, "extensions", "subagent");
+	return path.join(agentDir, "extensions", "pi-cohort");
 }
 
 const DEFAULT_INTERCOM_TARGET_PREFIX = "subagent-chat";

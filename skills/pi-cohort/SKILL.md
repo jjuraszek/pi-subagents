@@ -33,7 +33,7 @@ Humans often use the slash-command layer instead:
 - `/chain` — launch a chain of steps
 - `/parallel` — launch top-level parallel tasks
 - `/run-chain` — launch a saved `.chain.md` or `.chain.json` workflow
-- `/subagents-doctor` — diagnose setup, discovery, async paths, and intercom bridge state
+- `/cohort-doctor` — diagnose setup, discovery, async paths, and intercom bridge state
 
 Prefer the tool when you are writing agent logic. Prefer the slash commands when
 you are guiding a human through an interactive flow.
@@ -349,7 +349,7 @@ Use diagnostics when setup or child startup looks wrong:
 subagent({ action: "doctor" })
 ```
 
-Humans can use `/subagents-doctor` for the same read-only report. It checks runtime paths, discovery counts, async support, current session context, and intercom bridge state.
+Humans can use `/cohort-doctor` for the same read-only report. It checks runtime paths, discovery counts, async support, current session context, and intercom bridge state.
 
 ### Subagent control
 
@@ -497,7 +497,7 @@ Or inspects unresolved asks first:
 intercom({ action: "pending" })
 ```
 
-If intercom messages do not show up, run `subagent({ action: "doctor" })` or `/subagents-doctor`.
+If intercom messages do not show up, run `subagent({ action: "doctor" })` or `/cohort-doctor`.
 
 ## Management Mode
 

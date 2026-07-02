@@ -188,7 +188,7 @@ Show me the current async runs.
 If something feels misconfigured, run:
 
 ```text
-/subagents-doctor
+/cohort-doctor
 ```
 
 or ask:
@@ -257,7 +257,7 @@ If a child appears stalled, needs-attention notices can show up in the parent se
 If messages do not show up, run:
 
 ```text
-/subagents-doctor
+/cohort-doctor
 ```
 
 For normal use, you do not need to configure anything. Advanced users can tune the bridge with `intercomBridge` in the configuration section below.
@@ -284,7 +284,7 @@ Skip this section until you want exact syntax.
 | `/chain agent1 "task1" -> agent2 "task2"` | Run agents in sequence |
 | `/parallel agent1 "task1" -> agent2 "task2"` | Run agents in parallel |
 | `/run-chain <chainName> -- <task>` | Launch a saved `.chain.md` or `.chain.json` workflow |
-| `/subagents-doctor` | Show read-only setup diagnostics |
+| `/cohort-doctor` | Show read-only setup diagnostics |
 
 Commands validate agent names locally, support tab completion, and send results back into the conversation.
 
@@ -394,7 +394,7 @@ Agent locations, lowest to highest priority:
 
 | Scope | Path |
 |-------|------|
-| Builtin | `<agent-dir>/extensions/subagent/agents/` |
+| Builtin | `<agent-dir>/extensions/pi-cohort/agents/` |
 | User (global) | `~/.agents/*.md` |
 | User (pi profile) | `<PI_CODING_AGENT_DIR>/agents/*.md` |
 | Project (legacy) * | `<level>/.agents/*.md` |
@@ -947,7 +947,7 @@ After a worktree parallel step completes, per-agent diff stats are appended to t
 
 ## Configuration
 
-`pi-cohort` reads optional JSON config from `<PI_CODING_AGENT_DIR>/extensions/subagent/config.json`.
+`pi-cohort` reads optional JSON config from `<PI_CODING_AGENT_DIR>/extensions/pi-cohort/config.json`.
 
 ### `PI_CODING_AGENT_DIR`
 
@@ -1031,7 +1031,7 @@ Controls whether subagents receive runtime intercom coordination instructions an
 Fields:
 
 - `mode`: default `always`; use `fork-only` to inject only for forked runs, or `off` to disable the bridge.
-- `instructionFile`: optional Markdown template replacing the default bridge instructions. `{orchestratorTarget}` is interpolated. Relative paths resolve from `~/.pi/agent/extensions/subagent/`.
+- `instructionFile`: optional Markdown template replacing the default bridge instructions. `{orchestratorTarget}` is interpolated. Relative paths resolve from `~/.pi/agent/extensions/pi-cohort/`.
 
 Bridge activation also requires `pi-intercom` to be installed and enabled through `pi install npm:pi-intercom` or a legacy local extension checkout, a targetable current session name or fallback alias, and `pi-intercom` in any explicit agent `extensions` allowlist.
 
