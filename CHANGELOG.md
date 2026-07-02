@@ -1,6 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [2.0.0] - 2026-07-02
+
+First public npm release under the new name. Breaking public-identity change: package renamed, distribution moved from git-tag pins to npm.
 
 ### Changed
 - Renamed the package `pi-subagents` -> `pi-cohort` (repo, npm package name, skill directory, log prefixes, error strings).
