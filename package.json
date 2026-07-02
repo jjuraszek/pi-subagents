@@ -1,8 +1,8 @@
 {
   "name": "pi-cohort",
   "version": "1.4.5",
-  "description": "Pi extension for delegating tasks to subagents with chains, parallel execution, and TUI clarification",
-  "author": "Nico Bailon",
+  "description": "Delegate Pi work to focused child agents: code review, scouting, implementation, parallel audits, saved chains, and background jobs.",
+  "author": "Jacek Juraszek",
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -22,12 +22,11 @@
     "agents",
     "cli"
   ],
-  "bin": {
-    "pi-cohort": "install.mjs"
+  "engines": {
+    "node": ">=20"
   },
   "files": [
     "src/**/*.ts",
-    "*.mjs",
     "agents/",
     "skills/**/*",
     "prompts/**/*",
@@ -54,7 +53,9 @@
   "peerDependencies": {
     "@earendil-works/pi-agent-core": "*",
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-agent-core": {
@@ -65,16 +66,22 @@
     },
     "@earendil-works/pi-coding-agent": {
       "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
     }
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "^0.74.0",
-    "jiti": "^2.7.0",
-    "typebox": "^1.1.24"
+    "jiti": "^2.7.0"
   },
   "devDependencies": {
     "@earendil-works/pi-agent-core": "^0.74.0",
     "@earendil-works/pi-ai": "^0.74.0",
-    "@earendil-works/pi-coding-agent": "^0.74.0"
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0",
+    "typebox": "^1.1.24"
   }
 }

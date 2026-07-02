@@ -2,7 +2,7 @@
 
 Pi extension. Lets Pi delegate work to focused child agents: code review, scouting, implementation, parallel audits, saved chains, background/async jobs, intercom-coordinated multi-agent workflows.
 
-This repo **originated as a fork of [`nicobailon/pi-subagents`](https://github.com/nicobailon/pi-subagents)** but **no longer tracks upstream** — it is a standalone semver project with no upstream remote, rebase, or `-jj.<n>` suffix. It is consumed by Pi via git **tag** pins, not npm. See [Release model](#release-model).
+This repo **originated as a fork of [`nicobailon/pi-subagents`](https://github.com/nicobailon/pi-subagents)** but **no longer tracks upstream** - it is a standalone semver project with no upstream remote. It is published to npm and installed with `pi install npm:pi-cohort`. See [Release model](#release-model).
 
 ## Communication Style
 
@@ -27,34 +27,52 @@ LLM-readable artifacts (`AGENTS.md`, `README.md`, `CHANGELOG.md`, skill bodies, 
 
 ## Release model
 
-Consumed via **git tag pins** in pi `settings.json`, e.g.
-`"git:github.com/jjuraszek/pi-cohort@v0.27.0"`. There is **no npm publish**
-in the loop — do not run `npm publish`. There is **no upstream remote**: this is
-a standalone repo, released with plain semver.
+Published to **npm** as `pi-cohort`; installed with `pi install npm:pi-cohort`.
+The `pi-package` keyword lists it on the pi.dev packages gallery automatically.
+Plain semver, no upstream remote.
+
+Release is **tag-triggered and CI-executed**:
+
+1. The `release` skill (driven by `release.sh`) proposes the semver level, bumps
+   `package.json`, commits `Release <version>`, runs `npm run test:all` as a
+   pre-flight, creates the annotated `v<version>` tag, pushes `main` + tag, then
+   monitors CI and verifies npm + pi.dev. **No local `npm publish`.**
+2. Pushing a `v[0-9]+.[0-9]+.[0-9]+` tag triggers
+   `.github/workflows/release.yml`, which installs, verifies the tag matches
+   `package.json`, runs `npm run test:all`, and runs
+   `npm publish --provenance --access public` via npm OIDC trusted publishing.
+   `.github/workflows/test.yml` runs the suite on every push + PR.
+
+The release machinery (`release.sh`, `test.yml`, `release.yml`) is intentionally
+kept near-identical to pi-gauntlet's; `release.sh` differs only in its CONFIG
+header (package name, repo slug, former name, test command).
 
 ### Tag scheme
 
-`v<major>.<minor>.<patch>` — plain semver. `package.json` `version` mirrors the
-tag without the leading `v` (`0.27.0`).
+`v<major>.<minor>.<patch>` - plain semver. `package.json` `version` mirrors the
+tag without the leading `v`.
 
 ### Running a release
 
 Use the `release` skill (`.agents/skills/release/scripts/release.sh`):
 
 ```bash
-bash .agents/skills/release/scripts/release.sh minor      # X.Y.Z -> X.Y+1.0
-bash .agents/skills/release/scripts/release.sh patch      # X.Y.Z -> X.Y.Z+1
-bash .agents/skills/release/scripts/release.sh major      # X.Y.Z -> X+1.0.0
-bash .agents/skills/release/scripts/release.sh current    # tag package.json as-is
+bash .agents/skills/release/scripts/release.sh propose     # advisory bump level from git log
+bash .agents/skills/release/scripts/release.sh minor       # X.Y.Z -> X.Y+1.0, bump+test+tag+push+verify
+bash .agents/skills/release/scripts/release.sh patch       # X.Y.Z -> X.Y.Z+1
+bash .agents/skills/release/scripts/release.sh major       # X.Y.Z -> X+1.0.0
+bash .agents/skills/release/scripts/release.sh current     # tag package.json as-is
 bash .agents/skills/release/scripts/release.sh --dry-run minor
+bash .agents/skills/release/scripts/release.sh verify       # monitor CI, poll npm + pi.dev
+bash .agents/skills/release/scripts/release.sh sync-presets # report ~/.pi + parent-tree pins (--apply to rewrite)
 ```
 
-The script bumps `package.json`, commits `Release <version>`, creates+pushes the
-`v<version>` tag to `origin`, then rewrites every `~/.pi/agent*/settings.json`
-pin of `git:github.com/jjuraszek/pi-cohort@<ref>` to the new tag. Consuming
-project repos (e.g. a repo's own `.pi/settings.json`) are **not** touched — bump
-those pins by hand. See the skill for flags (`--dry-run`, `--no-update-pins`)
-and failure handling.
+### One-off npm setup
+
+OIDC trusted publishing must be registered once on npmjs.com for the `pi-cohort`
+package (Settings -> Trusted Publishing -> GitHub Actions publisher for repo
+`jjuraszek/pi-cohort`, workflow `release.yml`). Until it exists, the publish
+step cannot authenticate.
 
 ## Behaviors we own
 

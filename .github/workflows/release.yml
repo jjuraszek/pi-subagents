@@ -1,7 +1,8 @@
 name: Release
 
 on:
-  workflow_dispatch:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
   contents: read
@@ -20,9 +21,19 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - name: Install devDependencies
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
+      - name: Install dependencies
         run: npm install
+      - name: Verify tag matches package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag $GITHUB_REF_NAME ($tag) does not match package.json version $pkg"
+            exit 1
+          fi
       - name: Run tests
         run: npm run test:all
       - name: Publish to npm
-        run: npm publish --provenance
+        run: npm publish --provenance --access public

@@ -2,14 +2,69 @@
 
 ## [Unreleased]
 
+### Changed
+- Renamed the package `pi-subagents` -> `pi-cohort` (repo, npm package name, skill directory, log prefixes, error strings).
+- Distribution moved to npm: install with `pi install npm:pi-cohort`. Publishing is automated from a `v*` tag push via GitHub Actions (`npm publish --provenance`, OIDC trusted publishing). Previously consumed via git tag pins.
+- Moved `@earendil-works/pi-tui` and `typebox` to `peerDependencies` (`*`), matching pi's bundled-core packages; only `jiti` remains a bundled runtime dependency.
+- Removed the `bin` / `install.mjs` git-clone installer in favor of `pi install npm:pi-cohort`.
+
+### Added
+- `LICENSE` (MIT), retaining the original `nicobailon/pi-subagents` copyright.
+
+## [1.4.5] - 2026-06-29
+
+### Changed
+- Condensed worker/reviewer personas with ponytail-derived minimalism wording.
+
+## [1.4.4] - 2026-06-29
+
 ### Added
 - Foreground wall-clock kill-cap (`inFlightSilenceKillMs`, default 30 min): a synchronous subagent whose in-flight turn produces no output past the cap is SIGTERMed and settles as an attributable failure (non-zero exit, `result.error` naming the cap), bounding the orchestrator's blocking wait on a child wedged inside a never-returning tool call. The kill is the enforcement arm of the existing `needs_attention` detector: clamped above the `inFlightSilenceCeilingMs + needsAttentionAfterMs` escalation so the warning always fires first, gated on `control.enabled`, foreground only.
-- `Σ$` footer status: grand-total session cost spanning the main loop plus every subagent subtree (foreground, async, nested fanout). Distinct from the built-in main-loop `$`; per-session, seeded from prior spend on resume. The main/sync/async slices are monotonic; the external slice may move down if a producer corrects its cumulative total downward.
-- `cost:external` cross-extension cost protocol: any extension can emit cumulative-per-source LLM spend on the `pi.events` `"cost:external"` channel; pi-cohort folds it into `Σ$` and surfaces a per-source breakdown in `subagent({ action: "doctor" })`.
+
+## [1.4.3] - 2026-06-28
+
+### Changed
+- Post the boot roster to scrollback at session start instead of the belowEditor widget.
+
+## [1.4.2] - 2026-06-28
+
+### Fixed
+- Render the boot roster as a belowEditor widget and fix footer bar doubling.
+
+## [1.4.1] - 2026-06-28
+
+### Added
+- `[Subagents]` roster banner at session start.
+
+## [1.4.0] - 2026-06-27
 
 ### Changed
 - Project persona/chain discovery now walks from cwd to the git root and aggregates every `.agents` + `.pi/agents` (chains: `.pi/chains`), nearest level winning name collisions, with `realpath` dedup for symlinked `.pi` levels and a no-git fallback to the single nearest root. Project `.pi/settings.json` `agentOverrides` / `disableBuiltins` merge across the same levels (nearest wins); override/create writes still target the nearest root. Behavior-additive (nearest still wins), but review before bumping a pinned tag: agents/overrides defined at ancestor levels become visible where they previously were not.
+
+## [1.3.0] - 2026-06-21
+
+### Added
+- `cost:external` cross-extension cost protocol: any extension can emit cumulative-per-source LLM spend on the `pi.events` `"cost:external"` channel; pi-cohort folds it into `Σ$` and surfaces a per-source breakdown in `subagent({ action: "doctor" })`.
+
+### Changed
 - All package footer statuses are now wrapped in `│ ... │` box-drawing dividers so they stay visually isolated regardless of extension load order.
+
+## [1.2.1] - 2026-06-19
+
+### Changed
+- Separate the grand-total cost from the neighbouring footer status.
+
+## [1.2.0] - 2026-06-19
+
+### Added
+- `Σ$` footer status: grand-total session cost spanning the main loop plus every subagent subtree (foreground, async, nested fanout). Distinct from the built-in main-loop `$`; per-session, seeded from prior spend on resume. The main/sync/async slices are monotonic; the external slice may move down if a producer corrects its cumulative total downward.
+
+## [1.1.0] - 2026-06-16
+
+### Added
+- In-flight-turn awareness for subagent control: `control` config + progress type fields, schema, and lifecycle-reducer wiring across both the foreground and background execution paths.
+
+## [1.0.0] - 2026-06-15
 
 ### Removed
 - `researcher` builtin agent and the `/parallel-research` prompt command.

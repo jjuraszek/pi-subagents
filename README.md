@@ -179,9 +179,9 @@ Any extension can contribute its LLM spend to `Σ$` by emitting on the
 | `inputTokens` | number (optional) | Cumulative input tokens this session. Invalid values are dropped individually; cost is kept. |
 | `outputTokens` | number (optional) | Cumulative output tokens this session. Invalid values are dropped individually; cost is kept. |
 
-- **Cumulative, not deltas.** A producer emits its running session total on every update. Pi-subagents tracks the latest value per `source` and updates `Σ$` accordingly.
+- **Cumulative, not deltas.** A producer emits its running session total on every update. `pi-cohort` tracks the latest value per `source` and updates `Σ$` accordingly.
 - **Idempotent/replay-safe.** Re-emitting the same `source` overwrites the stored value; it never double-counts.
-- **Live-only.** Pi-subagents does not persist or reseed the external slice. A producer SHOULD re-emit its cumulative total on its own `session_start` to restore visibility after a session resume.
+- **Live-only.** `pi-cohort` does not persist or reseed the external slice. A producer SHOULD re-emit its cumulative total on its own `session_start` to restore visibility after a session resume.
 - **Sanitization at the boundary.** Non-finite `totalCost` or a missing/empty `source` drops the whole payload with one `console.warn`. Negative `totalCost` is clamped to 0. Invalid optional token fields are dropped individually while the cost is kept.
 - **Surfacing.** The external slice is folded into the `Σ$` footer. A per-source breakdown appears in `subagent({ action: "doctor" })`.
 
@@ -408,7 +408,7 @@ Agent locations, lowest to highest priority:
 
 \* Project roots are discovered at every level from cwd up to the git root, not just the repo root - see the walk description below.
 
-> **Fork note.** This fork (`jjuraszek/pi-cohort`) diverges from upstream here: discovery reads each root **flat** (top-level `*.md` only), the two user roots are ordered `~/.agents < <PI_CODING_AGENT_DIR>/agents`, and `SKILL.md` is never loaded as an agent. See [AGENTS.md](AGENTS.md).
+Discovery reads each root **flat** (top-level `*.md` only), the two user roots are ordered `~/.agents < <PI_CODING_AGENT_DIR>/agents`, and `SKILL.md` is never loaded as an agent. See [AGENTS.md](AGENTS.md).
 
 `<PI_CODING_AGENT_DIR>` defaults to `~/.pi/agent` when the env var is unset (see [`PI_CODING_AGENT_DIR`](#pi_coding_agent_dir)). Setting it relocates the pi profile root but does **not** sandbox discovery - `~/.agents` is always scanned as the lowest-priority user layer regardless.
 
