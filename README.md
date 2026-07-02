@@ -1,7 +1,3 @@
-<p>
-  <img src="https://raw.githubusercontent.com/jjuraszek/pi-cohort/main/banner.png" alt="pi-cohort" width="1100">
-</p>
-
 # pi-cohort
 
 `pi-cohort` lets Pi delegate work to focused child agents. Use it for code review, scouting, implementation, parallel audits, saved workflows, background jobs, and anything else that benefits from a second or third set of model eyes.
